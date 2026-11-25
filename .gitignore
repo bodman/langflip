@@ -1,0 +1,13 @@
+# Project-local isolated Rust toolchain & caches
+/.toolchain/
+
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
