@@ -1,10 +1,18 @@
 //! Foreground window & GUI-thread focus observer (`T028`, Phase 2 UIA seam).
 
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 
 use langflip_core::ports::{ControlKind, FocusContext, FocusId, FocusObserver};
 use windows::Win32::Foundation::HWND;
+use windows::Win32::System::Com::{
+    CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+};
+use windows::Win32::UI::Accessibility::{
+    CUIAutomation, IUIAutomation, IUIAutomationTextPattern, TextPatternRangeEndpoint_End,
+    TextPatternRangeEndpoint_Start, UIA_TextPatternId,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     GUITHREADINFO, GetClassNameW, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId,
 };
@@ -61,6 +69,55 @@ fn window_class_name(hwnd: HWND) -> String {
         .into_owned()
 }
 
+thread_local! {
+    static WORKER_UIA: RefCell<Option<IUIAutomation>> = const { RefCell::new(None) };
+}
+
+fn with_worker_uia<R>(f: impl FnOnce(&IUIAutomation) -> R) -> Option<R> {
+    WORKER_UIA.with(|slot| {
+        let mut borrow = slot.borrow_mut();
+        if borrow.is_none() {
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            }
+            let uia: IUIAutomation =
+                unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) }.ok()?;
+            *borrow = Some(uia);
+        }
+        borrow.as_ref().map(f)
+    })
+}
+
+fn query_uia_has_selection(uia: &IUIAutomation) -> bool {
+    let Ok(elem) = (unsafe { uia.GetFocusedElement() }) else {
+        return false;
+    };
+    let Ok(pattern) =
+        (unsafe { elem.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId) })
+    else {
+        return false;
+    };
+    let Ok(ranges) = (unsafe { pattern.GetSelection() }) else {
+        return false;
+    };
+    let len = unsafe { ranges.Length() }.unwrap_or(0);
+    for i in 0..len {
+        if let Ok(range) = unsafe { ranges.GetElement(i) } {
+            let cmp = unsafe {
+                range.CompareEndpoints(
+                    TextPatternRangeEndpoint_Start,
+                    &range,
+                    TextPatternRangeEndpoint_End,
+                )
+            };
+            if matches!(cmp, Ok(v) if v != 0) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WinFocusObserver;
 
@@ -74,5 +131,9 @@ impl FocusObserver for WinFocusObserver {
             element_id: None,
             control_kind: ControlKind::Unknown,
         }
+    }
+
+    fn has_active_selection(&self) -> bool {
+        with_worker_uia(query_uia_has_selection).unwrap_or(false)
     }
 }

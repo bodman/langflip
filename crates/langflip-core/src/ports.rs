@@ -36,6 +36,13 @@ pub struct FocusContext {
 /// Observes foreground focus target and control metadata.
 pub trait FocusObserver {
     fn current_focus(&self) -> FocusContext;
+
+    /// Returns `true` if the focused input control currently holds a non-empty
+    /// highlighted text selection (e.g., browser Omnibox inline autocomplete).
+    /// Must never read or log selected text. Defaults to `false`.
+    fn has_active_selection(&self) -> bool {
+        false
+    }
 }
 
 /// Low-level injection step planned by `langflip-core::planner::plan_injection`.

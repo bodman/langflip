@@ -265,9 +265,21 @@ impl ConversionEngine {
         }
 
         // 5. Plan & execute injection (mask key + L/R modifier release + erase + replay).
+        // If the focused control holds an active inline selection (e.g., browser Omnibox
+        // autocomplete suffix), add 1 dismissal Backspace so all `count` buffered chars are erased.
         let snapshot = self.policy.buffer().snapshot();
         let count = snapshot.len();
-        let steps = plan_injection(ev.modifiers, count, &snapshot, self.config.replay_delay_ms);
+        let erase_count = if focus.has_active_selection() {
+            count + 1
+        } else {
+            count
+        };
+        let steps = plan_injection(
+            ev.modifiers,
+            erase_count,
+            &snapshot,
+            self.config.replay_delay_ms,
+        );
         if let Err(err) = injector.execute_steps(&steps) {
             self.policy.buffer_mut().clear();
             return EngineOutcome::FailedInjection(err);
@@ -278,7 +290,7 @@ impl ConversionEngine {
             .buffer_mut()
             .set_burst_layout(confirmed_layout.clone());
         EngineOutcome::Converted {
-            erased: count,
+            erased: erase_count,
             replayed: count,
             new_layout: confirmed_layout,
         }
