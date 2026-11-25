@@ -36,7 +36,7 @@ Every pure core module (`key`, `hotkey`, `layout`, `config`, `buffer`, `planner`
 
 **Independent Test**: Cross-compile `win11_poc.exe` and verify it switches/confirms EN↔HE layouts and replays `"hello world"` / `"שלום עולם"` in Notepad, Chrome/Edge, and Windows Terminal.
 
-- [ ] T007 [US2] Create minimal Windows 11 spike binary `crates/langflip-platform-win/examples/win11_poc.rs` testing `GetGUIThreadInfo`, registry `HKL` → `KLID` resolution, `WM_INPUTLANGCHANGEREQUEST` confirmation poll, and `SendInput` scan-code + mask-key injection; cross-compile via `./scripts/cargo.sh build --release --locked --target x86_64-pc-windows-gnu -p langflip-platform-win --example win11_poc`
+- [x] T007 [US2] Create minimal Windows 11 spike binary `crates/langflip-platform-win/examples/win11_poc.rs` testing `GetGUIThreadInfo`, registry `HKL` → `KLID` resolution, `WM_INPUTLANGCHANGEREQUEST` confirmation poll, and `SendInput` scan-code + mask-key injection; cross-compile via `./scripts/cargo.sh build --release --locked --target x86_64-pc-windows-gnu -p langflip-platform-win --example win11_poc`
 - [ ] T008 [US2] Run `win11_poc.exe` on Windows 11 in Notepad, Chrome/Edge, and Windows Terminal; record confirmed behaviors or quirks in `specs/001-mvp-layout-converter/research.md`
 
 **Checkpoint**: Riskiest Windows 11 APIs empirically verified before full implementation.
