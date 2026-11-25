@@ -77,12 +77,14 @@ impl LayoutController for MockLayouts {
 
 struct MockFocus {
     current: Arc<AtomicU64>,
+    has_selection: Arc<AtomicBool>,
 }
 
 impl MockFocus {
     fn new(id: u64) -> Self {
         Self {
             current: Arc::new(AtomicU64::new(id)),
+            has_selection: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -94,6 +96,10 @@ impl FocusObserver for MockFocus {
             element_id: None,
             control_kind: ControlKind::Unknown,
         }
+    }
+
+    fn has_active_selection(&self) -> bool {
+        self.has_selection.load(Ordering::SeqCst)
     }
 }
 
@@ -465,4 +471,54 @@ fn buffer_tail_overflow_converts_only_retained_tail() {
             new_layout: en(),
         }
     );
+}
+
+#[test]
+fn inline_autocomplete_selection_adds_one_dismissal_backspace_and_replays_exact_burst() {
+    let overflow = Arc::new(AtomicBool::new(false));
+    let latest_seq = Arc::new(AtomicU64::new(2));
+    let mut engine = ConversionEngine::new(make_config(), overflow, latest_seq);
+    let mut injector = MockInjector::default();
+    let mut layouts = MockLayouts::new(en());
+    let focus = MockFocus::new(1);
+    focus.has_selection.store(true, Ordering::SeqCst);
+
+    // User typed 2 chars ('g', 'o') and Omnibox highlighted inline suffix ("ogle.com")
+    engine.handle_event(key_down(PhysicalKey::new(0x22, false), Modifiers::default(), en(), 1, 1), &mut injector, &mut layouts, &focus);
+    engine.handle_event(key_down(PhysicalKey::new(0x18, false), Modifiers::default(), en(), 1, 2), &mut injector, &mut layouts, &focus);
+
+    let out = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), en(), 1, 2), &mut injector, &mut layouts, &focus);
+    assert_eq!(
+        out,
+        EngineOutcome::Converted {
+            erased: 3, // 1 dismissal Backspace + 2 buffered chars
+            replayed: 2,
+            new_layout: he(),
+        }
+    );
+    assert_eq!(
+        injector.executed[0],
+        vec![
+            InjectionStep::KeyTap { key: scan::BACKSPACE, shift: false },
+            InjectionStep::KeyTap { key: scan::BACKSPACE, shift: false },
+            InjectionStep::KeyTap { key: scan::BACKSPACE, shift: false },
+            InjectionStep::KeyTap { key: PhysicalKey::new(0x22, false), shift: false },
+            InjectionStep::KeyTap { key: PhysicalKey::new(0x18, false), shift: false },
+        ]
+    );
+}
+
+#[test]
+fn empty_buffer_with_active_selection_never_sends_backspaces() {
+    let overflow = Arc::new(AtomicBool::new(false));
+    let latest_seq = Arc::new(AtomicU64::new(0));
+    let mut engine = ConversionEngine::new(make_config(), overflow, latest_seq);
+    let mut injector = MockInjector::default();
+    let mut layouts = MockLayouts::new(en());
+    let focus = MockFocus::new(1);
+    focus.has_selection.store(true, Ordering::SeqCst);
+
+    let out = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), en(), 1, 0), &mut injector, &mut layouts, &focus);
+    assert_eq!(out, EngineOutcome::LayoutToggled(he()));
+    assert!(injector.executed.is_empty());
 }
