@@ -23,4 +23,4 @@ description: "TDD-ordered task breakdown for Spec 002 — Omnibox Inline-Autocom
 ## Phase 3: Windows 11 UIA Implementation & Verification
 
 - [x] T005 Implement `WinFocusObserver::has_active_selection` in `crates/langflip-platform-win/src/focus.rs` using thread-local `IUIAutomation` + `IUIAutomationTextPattern::GetSelection()` (returning `false` on any error; never reading/logging text)
-- [ ] T006 Run full workspace tests, Linux + Windows `clippy -- -D warnings`, cross-compile `langflip.exe`, copy to `C:\Users\omril\Downloads\langflip.exe`, and verify Edge address bar round-trips cleanly with zero stray characters (and zero regression in Notepad & Windows Terminal)
+- [x] T006 Run full workspace tests, Linux + Windows `clippy -- -D warnings`, cross-compile `langflip.exe`, copy to `C:\Users\omril\Downloads\langflip.exe`, and verify Edge address bar round-trips cleanly with zero stray characters (and zero regression in Notepad & Windows Terminal)

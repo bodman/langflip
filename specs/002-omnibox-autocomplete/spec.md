@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-26
 
-**Status**: Draft
+**Status**: Implemented (Verified on Windows 11)
 
 **Input**: User description: "Address browser address bar (Edge/Chrome Omnibox) inline-autocomplete behavior where an automatically highlighted suffix consumes Backspace #1 during conversion, leaving a stray character behind on each round-trip."
 
