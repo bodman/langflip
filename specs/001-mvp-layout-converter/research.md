@@ -1,61 +1,67 @@
 # Research & Technical Decisions: LangFlip MVP
 
-**Feature**: `001-mvp-layout-converter` | **Date**: 2026-11-25 (Revised after Design Review)
+**Feature**: `001-mvp-layout-converter` | **Date**: 2026-11-25 (Revision 3 after Multi-Agent Design Review)
 
-## 1. Declarative Dependencies, Pinned Isolated Rust Toolchain & Cross-Compilation
+## 1. Declarative Dependencies, Exact Pinned Isolated Rust Toolchain & Cross-Compilation
 
 - **Decision**: Declare **all** project dependencies in version-controlled configuration so any fresh clone is self-describing and reproducible:
-  - `toolchain/deps.conf`: Declarative list of required host binaries and package names across common Linux package managers (`apt`, `dnf`, `pacman`) — covering `curl`, `gcc` (`build-essential`), `x86_64-w64-mingw32-gcc` (`mingw-w64`), and `ca-certificates`.
-  - `rust-toolchain.toml`: Pin an **exact** Rust release (e.g., `channel = "1.85.0"`, verified at bootstrap time), explicitly include `components = ["clippy", "rustfmt"]`, and targets `["x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]`.
-  - `Cargo.toml` + committed `Cargo.lock`: Pinned Rust crate dependencies verified with `--locked`.
-  - `scripts/setup-env.sh`: Idempotent bootstrap script supporting `--check` (audit) and `--install-system-deps` (install missing host packages), installing `rustup`/Rust strictly under `<repo>/.toolchain/rustup` and `<repo>/.toolchain/cargo`, and pre-fetching crates into `.toolchain/cargo`.
+  - `toolchain/deps.conf`: Declarative manifest of required host binaries and package names across common Linux package managers (`apt`, `dnf`, `pacman`) — covering `curl`, `gcc` (`build-essential`), `x86_64-w64-mingw32-gcc` (`mingw-w64`), `ca-certificates` — plus pinned `rustup-init` URL/version and SHA-256 checksum.
+  - `rust-toolchain.toml`: Pin exact Rust release **`1.100.0`** (latest stable as of Nov 2026), explicitly including `components = ["clippy", "rustfmt"]` and `targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]`.
+  - `Cargo.toml` + committed `Cargo.lock`: Verified with `--locked` once crate dependencies are declared.
+  - `scripts/setup-env.sh`: Idempotent bootstrap script supporting `--check` and `--install-system-deps`, downloading `rustup-init`, verifying its SHA-256 checksum, running `rustup-init -y --no-modify-path` strictly with `RUSTUP_HOME="$REPO_ROOT/.toolchain/rustup"` and `CARGO_HOME="$REPO_ROOT/.toolchain/cargo"` (zero mutation of `~/.rustup`, `~/.cargo`, `~/.profile`, or `~/.bashrc`), and pre-fetching crates.
 - **Cargo config**: `.cargo/config.toml` sets `[target.x86_64-pc-windows-gnu] linker = "x86_64-w64-mingw32-gcc"`.
+- **Cross-target Clippy**: `windows` crate is declared under `[target.'cfg(windows)'.dependencies]` in `langflip-platform-win`, and verification runs Clippy for **both** Linux host and `--target x86_64-pc-windows-gnu` so the Windows adapter is statically checked on Linux.
 
-## 2. Crate & Workspace Architecture (Cross-Platform Core + Thin OS Adapters)
+## 2. Crate & Workspace Architecture (Pure Core Logic + Thin OS Adapters)
 
-- **Decision**: Three-crate Cargo workspace:
-  1. `crates/langflip-core`: Pure Rust library (`serde`, `toml` only). Owns `PhysicalKey`, `Modifiers`, `KeyEvent`, `InputEvent`, `LayoutId` (opaque string), `LayoutPair`, `HotkeySpec`, `AppConfig`, `KeystrokeBuffer` (behind `BufferPolicy`), `ConversionEngine`, and OS adapter traits (`InputListener`, `InputInjector`, `LayoutController`, `FocusObserver`). Zero Windows-specific code or LANGID tables.
-  2. `crates/langflip-platform-win`: Thin Windows 11 adapter (`#[cfg(target_os = "windows")]`) using Microsoft's official `windows` crate. Owns Windows-specific `KLID`/`HKL` resolution, `WH_KEYBOARD_LL`/`WH_MOUSE_LL` hooks, `SendInput` injection, and foreground window tracking.
-  3. `crates/langflip-app`: Thin binary entry point (`langflip.exe` on Windows; compile-checked stub on Linux) wiring config, startup layout validation, worker loop, and graceful shutdown.
+- **Decision**: Three-crate Cargo workspace where **all** pure decision/planning logic lives in `langflip-core` (strictly TDD-tested on Linux):
+  1. `crates/langflip-core` (`serde`, `toml` only; zero OS crates):
+     - `key.rs`: `PhysicalKey`, `Modifiers` (with **left/right** modifier bits + `caps_lock` + `num_lock`), `InjectedBy`, `KeyKind`, `classify_key()`, `KeyName` → `PhysicalKey` scan-code table, `KeyEvent`, `InputEvent`, `BufferedKeystroke` (with redacted `Debug`).
+     - `hotkey.rs`: `HotkeySpec` + `HotkeyMatcher` (single source of truth for scan-code hotkey matching and `hotkey_held` auto-repeat suppression — NOT duplicated in `hook.rs`).
+     - `layout.rs`: Opaque `LayoutId`, `InstalledLayout`, `LayoutPair`, and pure `resolve_layouts(installed, configured)` (exact ID match first, language-tag fallback with ambiguity warnings).
+     - `config.rs`: `AppConfig`, config file discovery order (1. executable dir, 2. OS config dir, 3. defaults), strict fail-fast TOML parsing & range validation.
+     - `ports.rs`: `FocusId`, `ControlKind`, `FocusContext`, `InjectionStep`, `InjectError`, `LayoutSwitchOutcome`, `InputListener`, `ListenerShutdown`, `InputInjector`, `LayoutController`, `FocusObserver`.
+     - `buffer.rs`: `BufferPolicy`, `NaiveBurstPolicy`, bounded RAM-only `KeystrokeBuffer` (redacted `Debug`).
+     - `planner.rs`: Pure `plan_injection(held_modifiers, erase_count, strokes) -> Vec<InjectionStep>` (mask key, exact left/right modifier `KeyUp`, Backspaces, Shift-wrapped scan-code down/up).
+     - `engine.rs`: `ConversionEngine` orchestrating `Check Layout -> Check Freshness -> Switch & Confirm -> Re-check Freshness -> Plan & Execute Injection -> Retain Buffer on Full Success`.
+  2. `crates/langflip-platform-win` (`[target.'cfg(windows)'.dependencies] windows`):
+     - Thin Win32 translator calling `langflip-core`'s pure functions.
+  3. `crates/langflip-app`:
+     - Thin binary wiring config, startup layout validation, bounded channel, worker loop, and `Ctrl+C` shutdown.
 
-## 3. Safe Conversion Ordering & Partial-Injection Recovery
+## 3. Early Windows 11 Proof-of-Concept Spike (Scheduled Right After Phase 1)
 
-- **Decision**: Execute conversion strictly in **Switch → Confirm → Validate Snapshot → Erase → Replay** order:
-  1. **Validate layout**: Read current foreground `HKL`; if it is not in the configured `LayoutPair`, abort without erasing and clear the buffer.
-  2. **Switch & confirm BEFORE erasure**: Post `WM_INPUTLANGCHANGEREQUEST` to the foreground window with the target `HKL`, then poll `GetKeyboardLayout(foreground_tid)` (e.g., every 2 ms up to 40 ms). If the active layout does NOT change to the target `HKL`, **abort immediately** — zero Backspaces are sent and user text is untouched.
-  3. **Validate trigger snapshot**: Confirm the foreground `HWND` and input sequence counter have not changed since the hotkey was pressed. If either changed (user kept typing or switched windows), abort before erasing and clear the buffer.
-  4. **Erase & replay with return-count verification**: Check the return value of every `SendInput` call (`sent == expected`). If fewer events were inserted (e.g., UIPI block or OS error), abort remaining steps immediately, clear the buffer (do NOT retain for round-trip), and log a non-sensitive diagnostic warning.
-  5. **Retain buffer ONLY on full success**: Only after erasure and replay both succeed completely is the buffer retained (tagged with the new layout) for round-trip double-tap.
-- **Early Windows PoC**: Validate `WM_INPUTLANGCHANGEREQUEST` confirmation + `SendInput` scan-code replay early on Windows 11 across Notepad, Chrome/Edge, and Windows Terminal/PowerShell (Phase 5 PoC gate).
+- **Decision**: Before building the full Windows adapter, run a small Windows 11 PoC spike (`T006b`) verifying the 3 riskiest Win32 assumptions in Notepad, Chrome/Edge, and Windows Terminal/PowerShell:
+  1. **Foreground thread & layout switch**: Using `GetGUIThreadInfo` on the foreground window's thread (not just `GetForegroundWindow` directly, which can miss UWP/console child threads) to query `GetKeyboardLayout`, post `WM_INPUTLANGCHANGEREQUEST`, and confirm the layout actually changed.
+  2. **HKL → KLID resolution**: Enumerating `GetKeyboardLayoutList` and resolving each `HKL`'s KLID via Windows registry lookup (`HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layouts`) + `Win32_System_Registry` & `Win32_Globalization` crate features. Verified Microsoft KLIDs:
+     - `00000409` — US (QWERTY)
+     - `0000040D` — Hebrew (`KBDHEB.DLL`)
+     - `0002040D` — Hebrew (Standard) (`KBDHEBS.DLL`)
+     - `0003040D` — Hebrew (Standard, 2018) (`KBDHEBSI.DLL`)
+     Default config uses `"en-US"` ↔ `"he-IL"` so Windows 11 users on any single Hebrew variant work out of the box (with a clear startup warning to pin an exact KLID if 2+ variants are installed).
+  3. **`SendInput` + mask key**: Verifying `SendInput` scan-code replay, `KEYEVENTF_EXTENDEDKEY`, `Pause` vs `NumLock` (`0x45`) disambiguation, and mask key (`VK_E8`) preventing Alt-menu / Ctrl+Shift OS-switch misfires.
 
-## 4. Bounded Event Queue, Non-Blocking Hooks & Idle Shutdown Wake-Up
+## 4. Safe Conversion Ordering, `latest_seq` Semantics & UIPI Reality
 
-- **Decision**:
-  - Use a **bounded** `std::sync::mpsc::SyncSender<InputEvent>` (`sync_channel(256)`) between the hook thread and the worker thread, plus an `Arc<AtomicBool>` `queue_overflowed` flag.
-  - Inside `WH_KEYBOARD_LL` / `WH_MOUSE_LL`:
-    - Check `dwExtraInfo == LANGFLIP_INJECTED_MARKER` (`0x4C46_4C50`); if matched, pass through immediately.
-    - Call non-blocking `tx.try_send(event)`. If `TrySendError::Full`, set `queue_overflowed = true` and return immediately (< 1 ms) so the hook never blocks and memory stays strictly bounded. When the worker sees `queue_overflowed`, it clears the buffer so conversion never runs on an incomplete history.
-  - **Idle Shutdown Wake-Up**: Store the hook thread's Win32 thread ID (`GetCurrentThreadId()`). The `InputListener` returns/exposes a `ShutdownHandle` whose `stop()` sets the atomic flag **and** calls `PostThreadMessageW(hook_tid, WM_QUIT, WPARAM(0), LPARAM(0))`, immediately waking an idle `GetMessageW` loop so hooks are unhooked and the process exits cleanly within milliseconds.
+- **Mutating sequence (`latest_seq`)**:
+  - Advanced **only** by mutating non-injected user events (`KeyDown` of non-hotkey keys, `MouseClick`, `FocusChanged`, `QueueOverflow`).
+  - Releasing the trigger hotkey or its combo modifiers (`KeyUp`) does **NOT** advance `latest_seq`, preventing false cancellations when the user lets go of `Pause` or `Ctrl+Shift+L` during layout-switch confirmation.
+  - Checked **before** layout switch AND **again** before erasure. If cancelled after layout switch, best-effort restore the prior layout.
+  - Known inherent limitation: a key typed during the ~1 ms micro-window *after* erasure has started can still interleave with synthetic Backspaces.
+- **UIPI / Elevated Windows (Accurate Behavior)**:
+  - On Windows 11, a non-elevated `WH_KEYBOARD_LL` hook does **not** receive keystrokes going to an elevated window at all; keys (including `Pause`) simply reach the elevated window untouched.
+  - Furthermore, `SendInput` blocked by UIPI does not reliably report a short write or `GetLastError`. Therefore `PartialInjection` (`sent < expected`) catches genuine OS-reported short writes, while elevated-window safety comes from non-elevated hooks never intercepting elevated windows in the first place.
 
-## 5. Windows 11 Layout Resolution (Exact KLID First, BCP-47 Fallback)
+## 5. Bounded Event Queue, Focus Producer & Idle Shutdown Wake-Up
 
-- **Decision**:
-  - Keep `LayoutId` in `langflip-core` as an opaque normalized identifier (e.g., `"00000409"`, `"0000040D"`, `"en-US"`, `"he-IL"`).
-  - Put Windows-specific layout resolution inside `crates/langflip-platform-win/src/layout.rs`:
-    1. Enumerate installed layouts via `GetKeyboardLayoutList` and query each layout's KLID / language identifier.
-    2. Match exact 8-hex-digit KLIDs first (e.g., `"00000409"` = US QWERTY, `"00010409"` = US Dvorak, `"0000040D"` = Hebrew Standard, `"0002040D"` = Hebrew Standard 2018) so layouts sharing a language are never collapsed.
-    3. If the user configured a BCP-47 tag (e.g., `"en-US"`, `"he-IL"`), match by LANGID against installed layouts; if multiple installed layouts share that LANGID, pick the first deterministically and emit a startup warning advising the user to pin the exact KLID in `langflip.toml`.
+- **Bounded queue**: `std::sync::mpsc::sync_channel::<InputEvent>(256)` with non-blocking `try_send` inside hook callbacks. On `TrySendError::Full`, set `overflow_flag` + advance `latest_seq` and return immediately (< 1 ms); worker clears the burst on overflow.
+- **Active layout on every key event**: Hook callback reads `GetKeyboardLayout(gui_tid)` (cheap in-process read) and attaches it to `KeyEvent.active_layout`, eliminating worker-side layout query races and enabling synchronous external-layout-change detection.
+- **Focus change producer**: Hook thread also registers `SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, ..., WINEVENT_OUTOFCONTEXT)` on the same `GetMessageW` message pump, emitting `InputEvent::FocusChanged` reliably on every window switch.
+- **External synthetic input**: Hook distinguishes `dwExtraInfo == LANGFLIP_INJECTED_MARKER` (`InjectedBy::SelfMarker` → ignore) from `LLKHF_INJECTED` without our marker (`InjectedBy::External` → reset burst).
+- **Idle shutdown wake-up**: `ListenerShutdown::stop()` sets the atomic stop flag AND calls `PostThreadMessageW(hook_tid, WM_QUIT, WPARAM(0), LPARAM(0))`, immediately waking an idle `GetMessageW` loop to unhook `WH_KEYBOARD_LL`, `WH_MOUSE_LL`, and `HWINEVENTHOOK`.
 
-## 6. Hotkey Auto-Repeat, Caps Lock & Combo Modifier Hygiene
-
-- **Decision**:
-  - **Auto-repeat suppression**: Track `hotkey_held: bool`. When the trigger hotkey is pressed while `hotkey_held == true`, swallow the repeat event and do NOT trigger conversion again until `KeyUp` clears `hotkey_held`.
-  - **Caps Lock**: Record Caps Lock state at burst start; if `CapsLock` is pressed mid-burst, treat it as a `ResetBoundary` (clears buffer) so replay never has mixed Caps Lock state.
-  - **Combo hotkeys (e.g., `Ctrl+Shift+L`)**: Before injecting Backspaces/replay, synthesize `KEYEVENTF_KEYUP` for any currently held modifier keys (`Ctrl`, `Alt`, `Shift`, `Meta`, tagged with `LANGFLIP_INJECTED_MARKER`) so injected Backspaces aren't interpreted as `Ctrl+Backspace` or `Shift+Backspace`. Wrap each shifted replayed key with synthetic `LShift` down/up. Never leave virtual modifiers stuck down on exit or error.
-  - **Replay pacing**: Default `replay_delay_ms = 0` (batch `SendInput` calls where delay is 0, keeping 50-char conversion well under the 150 ms target). When `replay_delay_ms > 0` (configurable up to `10` ms for slow remote terminals), sleep once **per keystroke** (not per half down/up event).
-
-## 7. Dependency Footprint
+## 6. Dependency Footprint
 
 - `langflip-core`: `serde`, `toml`.
-- `langflip-platform-win`: `windows` (minimal Win32 feature flags: `Win32_Foundation`, `Win32_UI_WindowsAndMessaging`, `Win32_UI_Input_KeyboardAndMouse`, `Win32_System_Threading`).
+- `langflip-platform-win`: `[target.'cfg(windows)'.dependencies] windows` with features: `Win32_Foundation`, `Win32_UI_WindowsAndMessaging`, `Win32_UI_Input_KeyboardAndMouse`, `Win32_System_Threading`, `Win32_System_Registry`, `Win32_Globalization`, `Win32_UI_Accessibility`.
 - `langflip-app`: `langflip-core`, `langflip-platform-win` (on Windows), `ctrlc`.
