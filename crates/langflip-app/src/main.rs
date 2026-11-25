@@ -165,6 +165,24 @@ mod win_main {
                         start.elapsed().as_millis()
                     );
                 }
+                EngineOutcome::AbortedSwitchRejected if metrics => {
+                    println!(
+                        "[metrics] aborted: layout switch rejected/timed out elapsed={}ms",
+                        start.elapsed().as_millis()
+                    );
+                }
+                EngineOutcome::AbortedStale if metrics => {
+                    println!(
+                        "[metrics] aborted: stale focus/sequence elapsed={}ms",
+                        start.elapsed().as_millis()
+                    );
+                }
+                EngineOutcome::AbortedThirdLayout if metrics => {
+                    println!(
+                        "[metrics] aborted: active layout not in configured pair elapsed={}ms",
+                        start.elapsed().as_millis()
+                    );
+                }
                 EngineOutcome::FailedInjection(err) => {
                     eprintln!("langflip: warning: {err}");
                 }
