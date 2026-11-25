@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-25
 
-**Status**: Draft (Design Review Revision 3)
+**Status**: Implemented (Verified on Windows 11)
 
 **Input**: User description: "A cross-platform-architected Rust utility (initially targeting Windows 11) that converts accidentally mistyped text between configurable keyboard languages (defaulting to English ↔ Hebrew) in-place across any application (browsers, native apps, command-line terminals) and switches the active keyboard layout on a configurable hotkey (default: Pause/Break). Starts with the naive low-dependency keystroke-buffer case while designing clear extension seams for larger focus-aware buffers, automatic OS layout discovery, and future OS targets. Includes setting up an isolated project-local Rust dev environment and Windows cross-compilation toolchain."
 
@@ -133,10 +133,10 @@ As the project maintainer, I want all domain logic (key classification, hotkey m
 
 #### Configuration & Privacy
 - **FR-014**: The utility MUST support an optional local configuration file searched in deterministic order: (1) alongside the executable (portable override), then (2) the OS user config directory, falling back to built-in defaults if neither file exists. Invalid syntax or out-of-range values MUST fail fast at startup with a clear error message. Configurable settings:
-  - Keyboard layout pair (language tags or exact OS layout IDs; default: `en-US` ↔ `he-IL`).
+  - Keyboard layout pair (primary language tags, BCP-47 tags, or exact OS layout IDs; default: `en` ↔ `he`).
   - Trigger hotkey matched by physical key (default: `Pause`).
   - Max buffer size (default: `128`, valid range `1..=512`).
-  - Per-keystroke replay delay in milliseconds (default: `0` ms, valid range `0..=10` ms).
+  - Per-keystroke replay delay in milliseconds (default: `1` ms, valid range `0..=10` ms; automatic paced injection for WinUI 3 Notepad).
   - Toggle-on-empty-buffer behavior (default: `true`).
 - **FR-015**: Captured keystrokes MUST remain strictly in volatile memory and MUST NEVER be written to disk, sent over the network, emitted to logs (debug or release), or exposed in debug/panic output.
 

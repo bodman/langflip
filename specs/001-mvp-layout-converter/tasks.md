@@ -104,7 +104,7 @@ Every pure core module (`key`, `hotkey`, `layout`, `config`, `buffer`, `planner`
 
 - [x] T033 [P] Run `./scripts/cargo.sh test --workspace --locked`, `./scripts/cargo.sh clippy --workspace --all-targets --locked -- -D warnings`, and `./scripts/cargo.sh clippy --target x86_64-pc-windows-gnu --workspace --locked -- -D warnings`
 - [x] T034 [P] Add concise root `README.md` linking to `specs/001-mvp-layout-converter/quickstart.md`, `langflip.example.toml`, and the Phase 2–4 growth roadmap
-- [ ] T035 Execute the full `specs/001-mvp-layout-converter/quickstart.md` Windows 11 verification checklist (Notepad, Chrome/Edge, Windows Terminal/PowerShell, round-trip double-tap vs. hold, reset boundaries, custom combo hotkey `Ctrl+Shift+L`, missing/ambiguous layout warnings & fail-fast invalid config, elevated PowerShell non-interception, `< 150 ms` conversion & `< 1 ms` hook callback via `--metrics`, and idle `Ctrl+C` shutdown < 500 ms)
+- [x] T035 Execute the full `specs/001-mvp-layout-converter/quickstart.md` Windows 11 verification checklist (Notepad, Chrome/Edge, Windows Terminal/PowerShell, round-trip double-tap vs. hold, reset boundaries, custom combo hotkey `Ctrl+Shift+L`, missing/ambiguous layout warnings & fail-fast invalid config, elevated PowerShell non-interception, `< 150 ms` conversion & `< 1 ms` hook callback via `--metrics`, and idle `Ctrl+C` shutdown < 500 ms)
 
 ---
 

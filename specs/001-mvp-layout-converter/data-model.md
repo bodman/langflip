@@ -79,11 +79,11 @@ pub enum InjectionStep {
 # All fields are optional; defaults shown below.
 
 [layouts]
-# Accepts BCP-47 language tags (e.g., "en-US", "he-IL", "ru-RU") or exact OS layout IDs
-# (e.g., Windows KLIDs: "00000409" US, "0000040D" Hebrew, "0002040D" Hebrew Standard,
-# "0003040D" Hebrew Standard 2018).
-primary = "en-US"
-secondary = "he-IL"
+# Accepts primary language tags ("en", "he", "ru"), BCP-47 tags ("en-US", "en-IN",
+# "he-IL"), or exact OS layout IDs (e.g., Windows KLIDs: "00000409" US, "00004009"
+# India, "0000040D" Hebrew, "0002040D" Hebrew Standard, "0003040D" Hebrew Standard 2018).
+primary = "en"
+secondary = "he"
 
 [hotkey]
 key = "Pause"          # Physical key name: "Pause", "F9", "ScrollLock", "L", etc.
@@ -94,7 +94,7 @@ meta = false
 
 [behavior]
 max_buffer_len = 128          # Valid range: 1..=512 (rejected if out of range)
-replay_delay_ms = 0           # Valid range: 0..=10 ms per keystroke (0 = batched)
+replay_delay_ms = 1           # Valid range: 0..=10 ms per keystroke
 toggle_on_empty_buffer = true
 ```
 
