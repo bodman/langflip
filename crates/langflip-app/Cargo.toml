@@ -1,0 +1,17 @@
+[package]
+name = "langflip-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LangFlip desktop binary wiring core engine to the active OS adapter"
+
+[[bin]]
+name = "langflip"
+path = "src/main.rs"
+
+[dependencies]
+langflip-core = { path = "../langflip-core" }
+
+[target.'cfg(windows)'.dependencies]
+ctrlc.workspace = true
+langflip-platform-win = { path = "../langflip-platform-win" }

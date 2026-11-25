@@ -1,0 +1,32 @@
+# LangFlip Configuration (example)
+#
+# Lookup order:
+#   1. langflip.toml next to langflip.exe (portable override)
+#   2. %APPDATA%\langflip\langflip.toml (OS user config directory)
+#   3. Built-in defaults (shown below)
+#
+# Invalid syntax or out-of-range values fail fast at startup.
+
+[layouts]
+# Accepts primary language tags ("en", "he", "ru"), full BCP-47 tags ("en-US",
+# "en-IN", "he-IL"), or exact OS layout IDs (e.g., Windows KLIDs: "00000409" US,
+# "00004009" English India, "0000040D" Hebrew, "0002040D" Hebrew Standard,
+# "0003040D" Hebrew Standard 2018).
+primary = "en"
+secondary = "he"
+
+[hotkey]
+# Physical key name (layout-independent): "Pause", "F9", "ScrollLock", "L", etc.
+key = "Pause"
+ctrl = false
+alt = false
+shift = false
+meta = false
+
+[behavior]
+# Maximum buffered keystrokes per burst (valid range: 1..=512).
+max_buffer_len = 128
+# Per-keystroke delay during replay in milliseconds (valid range: 0..=10; 1 ms prevents drops in WinUI/Notepad).
+replay_delay_ms = 1
+# If true, pressing the hotkey on an empty buffer toggles the keyboard layout.
+toggle_on_empty_buffer = true

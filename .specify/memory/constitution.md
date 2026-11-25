@@ -20,7 +20,7 @@ All platform-independent core logic (buffer state transitions, reset triggers, s
 
 ### V. Privacy, Responsiveness & Non-Intrusiveness
 Because a global keyboard hook observes all keystrokes:
-- Keystroke buffers MUST stay strictly in volatile RAM with a hard upper bound and MUST NEVER be written to disk, network, or release logs.
+- Keystroke buffers MUST stay strictly in volatile RAM with a hard upper bound and MUST NEVER be written to disk, network, logs (debug or release), or panic/`Debug` output.
 - Low-level input hook callbacks MUST be non-blocking (enqueue-only) so the utility never lags or freezes user typing.
 - Normal typing MUST pass through unmodified unless the configured hotkey is pressed.
 
@@ -44,4 +44,4 @@ Prefer reusing existing code over re-implementing logic. Before writing a new fu
 
 This constitution supersedes ad-hoc practices for the LangFlip repository. Amendments require updating this file, incrementing the version, and recording the rationale.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-25 | **Last Amended**: 2026-11-25
+**Version**: 1.1.1 | **Ratified**: 2026-11-25 | **Last Amended**: 2026-11-25

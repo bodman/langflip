@@ -1,0 +1,10 @@
+[package]
+name = "langflip-platform-win"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Thin Windows 11 Win32 adapter for LangFlip"
+
+[target.'cfg(windows)'.dependencies]
+langflip-core = { path = "../langflip-core" }
+windows.workspace = true
