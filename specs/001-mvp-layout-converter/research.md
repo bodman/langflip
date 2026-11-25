@@ -29,17 +29,18 @@
   3. `crates/langflip-app`:
      - Thin binary wiring config, startup layout validation, bounded channel, worker loop, and `Ctrl+C` shutdown.
 
-## 3. Early Windows 11 Proof-of-Concept Spike (Scheduled Right After Phase 1)
+## 3. Early Windows 11 Proof-of-Concept Spike — Empirical Results (`T007`–`T008`, Verified)
 
-- **Decision**: Before building the full Windows adapter, run a small Windows 11 PoC spike (`T006b`) verifying the 3 riskiest Win32 assumptions in Notepad, Chrome/Edge, and Windows Terminal/PowerShell:
-  1. **Foreground thread & layout switch**: Using `GetGUIThreadInfo` on the foreground window's thread (not just `GetForegroundWindow` directly, which can miss UWP/console child threads) to query `GetKeyboardLayout`, post `WM_INPUTLANGCHANGEREQUEST`, and confirm the layout actually changed.
-  2. **HKL → KLID resolution**: Enumerating `GetKeyboardLayoutList` and resolving each `HKL`'s KLID via Windows registry lookup (`HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layouts`) + `Win32_System_Registry` & `Win32_Globalization` crate features. Verified Microsoft KLIDs:
-     - `00000409` — US (QWERTY)
-     - `0000040D` — Hebrew (`KBDHEB.DLL`)
-     - `0002040D` — Hebrew (Standard) (`KBDHEBS.DLL`)
-     - `0003040D` — Hebrew (Standard, 2018) (`KBDHEBSI.DLL`)
-     Default config uses `"en-US"` ↔ `"he-IL"` so Windows 11 users on any single Hebrew variant work out of the box (with a clear startup warning to pin an exact KLID if 2+ variants are installed).
-  3. **`SendInput` + mask key**: Verifying `SendInput` scan-code replay, `KEYEVENTF_EXTENDEDKEY`, `Pause` vs `NumLock` (`0x45`) disambiguation, and mask key (`VK_E8`) preventing Alt-menu / Ctrl+Shift OS-switch misfires.
+Executed `win11_poc.exe` on Windows 11 across Notepad, Microsoft Edge, and Windows Terminal (PowerShell):
+
+1. **Registry `HKL → KLID` resolution**: Verified working for both standard layouts (`HKL=0x0000000040094009` → `KLID=00004009`, `"India"`) and variant layouts via `0xF0xx` Layout Id lookup (`HKL=0xFFFFFFFFF03D040D` → `KLID=0002040D`, `"Hebrew (Standard)"`).
+   - **Design update**: Because real Windows 11 machines often use regional English variants like `en-IN` (`00004009`) or `en-GB` (`00000809`) alongside Hebrew (`0002040D` / `0003040D`), `resolve_layouts()` MUST support: (a) exact KLID match (`00004009`), (b) exact BCP-47 tag match (`en-IN`), and (c) primary-language fallback (`en` matching any `en-*`, `he` matching any `he-*`, with ambiguity warning if 2+ layouts share that primary language). Default config pair: `"en"` ↔ `"he"`.
+2. **`GetGUIThreadInfo` proven essential**: On Windows 11 Notepad, `fg_tid=21836` differed from `focus_tid=34804`. Posting `WM_INPUTLANGCHANGEREQUEST` to `hwndFocus` and polling `GetKeyboardLayout(focus_tid)` succeeded immediately.
+3. **End-to-end timings (well under 150 ms target)**:
+   - **Notepad**: EN→HE confirmed in 14 ms; HE→EN confirmed in 7 ms; full erase + replay = **83 ms**.
+   - **Microsoft Edge**: EN→HE confirmed in 8 ms; HE→EN confirmed in 4 ms; full erase + replay = **57 ms**.
+   - **Windows Terminal (PowerShell)**: Both EN→HE (3–12 ms) and HE→EN (5 ms) confirmed via `WM_INPUTLANGCHANGEREQUEST`, and `SendInput` scan-code injection succeeded (10/10 in 5 ms). *Observed quirk*: Windows Terminal ignored a second programmatic `WM_INPUTLANGCHANGEREQUEST` issued ~600 ms after the first; our switch-before-erase safety guard cleanly aborted with zero text lost. (Double-tap round-trip in Windows Terminal may require >1s spacing or manual switch; single-press conversion works in both directions.)
+4. **Windows crate features**: `Win32_System_Com` and `Win32_UI_TextServices` are available in `windows` 0.61.3 if needed later; MVP layout switching only needs `WM_INPUTLANGCHANGEREQUEST` + `GetGUIThreadInfo` + registry `KLID` lookup.
 
 ## 4. Safe Conversion Ordering, `latest_seq` Semantics & UIPI Reality
 

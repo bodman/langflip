@@ -25,6 +25,10 @@ mod win_impl {
     use std::time::{Duration, Instant};
 
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+        CoUninitialize,
+    };
     use windows::Win32::System::Registry::{
         HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_SZ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
         RegQueryValueExW,
@@ -33,14 +37,17 @@ mod win_impl {
         GetKeyboardLayout, GetKeyboardLayoutList, HKL, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
         KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput, VIRTUAL_KEY,
     };
+    use windows::Win32::UI::TextServices::{
+        CLSID_TF_InputProcessorProfiles, ITfInputProcessorProfileMgr, TF_IPPMF_FORSESSION,
+        TF_PROFILETYPE_KEYBOARDLAYOUT,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{
         GUITHREADINFO, GetForegroundWindow, GetGUIThreadInfo, GetWindowTextW,
         GetWindowThreadProcessId, PostMessageW, WM_INPUTLANGCHANGEREQUEST,
     };
-    use windows::core::PCWSTR;
+    use windows::core::{GUID, PCWSTR};
 
     const LANGFLIP_MARKER: usize = 0x4C46_4C50;
-    const VK_MASK_UNASSIGNED: VIRTUAL_KEY = VIRTUAL_KEY(0xE8);
 
     // AT Set 1 physical scan codes for "hello" and Backspace.
     const SCAN_HELLO: [u16; 5] = [0x23, 0x12, 0x26, 0x26, 0x18];
@@ -117,11 +124,11 @@ mod win_impl {
             initial_hkl.0 as usize, target_layout.klid, target_layout.hkl.0 as usize, target_layout.text
         );
 
-        let (confirmed, elapsed_ms, observed_hkl) =
-            switch_and_confirm(focus_hwnd, focus_tid, target_layout.hkl, 100);
+        let (confirmed, elapsed_ms, observed_hkl, via) =
+            switch_and_confirm(focus_hwnd, fg_hwnd, focus_tid, target_layout.hkl, 100);
         println!(
-            "  switch_and_confirm: confirmed={} elapsed={}ms observed_hkl={:#018X}",
-            confirmed, elapsed_ms, observed_hkl.0 as usize
+            "  switch_and_confirm: confirmed={} elapsed={}ms via={} observed_hkl={:#018X}",
+            confirmed, elapsed_ms, via, observed_hkl.0 as usize
         );
 
         if !confirmed {
@@ -129,16 +136,35 @@ mod win_impl {
             return;
         }
 
-        println!("\n[Step 2] Injecting mask key + 5 scan-code keys ('hello' physical keys)...");
+        println!("\n[Step 2] Injecting 5 scan-code keys ('hello' physical keys, no orphan VK_E8)...");
         let t_inject = Instant::now();
-        let (sent1, exp1) = send_mask_and_keys(&SCAN_HELLO);
+        let (sent1, exp1) = send_scan_keys(&SCAN_HELLO);
         println!("  SendInput(type 5 keys): sent={}/{} in {}ms", sent1, exp1, t_inject.elapsed().as_millis());
         thread::sleep(Duration::from_millis(600));
 
-        println!("\n[Step 3] Switching back to initial layout ({:#018X}), erasing 5 chars, replaying 5 keys...", initial_hkl.0 as usize);
+        // Re-query GUI focus before Step 3 to see if Windows Terminal changed focus_hwnd.
+        let mut gui3 = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        let gui3_ok = unsafe { GetGUIThreadInfo(fg_tid, &mut gui3) }.is_ok();
+        let focus3_hwnd = if gui3_ok && !gui3.hwndFocus.0.is_null() {
+            gui3.hwndFocus
+        } else {
+            fg_hwnd
+        };
+        let focus3_tid = unsafe { GetWindowThreadProcessId(focus3_hwnd, None) };
+        println!(
+            "\n[Step 3] Re-queried focus_hwnd={:?} (tid={}), switching back to initial layout ({:#018X}), erasing 5 chars, replaying 5 keys...",
+            focus3_hwnd.0, focus3_tid, initial_hkl.0 as usize
+        );
         let t_total = Instant::now();
-        let (confirmed2, elapsed2, _) = switch_and_confirm(focus_hwnd, focus_tid, initial_hkl, 100);
-        println!("  switch back: confirmed={} elapsed={}ms", confirmed2, elapsed2);
+        let (confirmed2, elapsed2, obs2, via2) =
+            switch_and_confirm(focus3_hwnd, fg_hwnd, focus3_tid, initial_hkl, 250);
+        println!(
+            "  switch back: confirmed={} elapsed={}ms via={} observed_hkl={:#018X}",
+            confirmed2, elapsed2, via2, obs2.0 as usize
+        );
         if !confirmed2 {
             println!("  ABORTING erase+replay because switch-back was not confirmed.");
             return;
@@ -180,50 +206,69 @@ mod win_impl {
     }
 
     fn switch_and_confirm(
-        target_hwnd: HWND,
+        focus_hwnd: HWND,
+        _fg_hwnd: HWND,
         target_tid: u32,
         target_hkl: HKL,
         timeout_ms: u64,
-    ) -> (bool, u128, HKL) {
+    ) -> (bool, u128, HKL, &'static str) {
         let start = Instant::now();
         let _ = unsafe {
             PostMessageW(
-                Some(target_hwnd),
+                Some(focus_hwnd),
                 WM_INPUTLANGCHANGEREQUEST,
                 WPARAM(0),
                 LPARAM(target_hkl.0 as isize),
             )
         };
 
+        let mut stage = 0u8;
         let deadline = Duration::from_millis(timeout_ms);
         loop {
             let now_hkl = unsafe { GetKeyboardLayout(target_tid) };
             if now_hkl == target_hkl {
-                return (true, start.elapsed().as_millis(), now_hkl);
+                let via = match stage {
+                    0 => "WM_INPUTLANGCHANGEREQUEST",
+                    _ => "TSF_ActivateProfile(FORSESSION)",
+                };
+                return (true, start.elapsed().as_millis(), now_hkl, via);
             }
-            if start.elapsed() >= deadline {
-                return (false, start.elapsed().as_millis(), now_hkl);
+            let elapsed = start.elapsed();
+            if stage == 0 && elapsed >= Duration::from_millis(25) {
+                stage = 1;
+                if let Err(err) = activate_via_tsf(target_hkl) {
+                    eprintln!("  TSF ActivateProfile error: {err}");
+                }
+            }
+            if elapsed >= deadline {
+                return (false, elapsed.as_millis(), now_hkl, "timeout");
             }
             thread::sleep(Duration::from_millis(2));
         }
     }
 
-    fn send_mask_and_keys(scans: &[u16]) -> (usize, usize) {
-        let mut inputs = Vec::with_capacity(1 + scans.len() * 2);
-        inputs.push(INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VK_MASK_UNASSIGNED,
-                    wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: LANGFLIP_MARKER,
-                },
-            },
-        });
-        append_scan_taps(&mut inputs, scans);
-        dispatch_inputs(&inputs)
+    fn activate_via_tsf(target_hkl: HKL) -> windows::core::Result<()> {
+        let lang_id = (target_hkl.0 as usize & 0xFFFF) as u16;
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let res = (|| -> windows::core::Result<()> {
+                let mgr: ITfInputProcessorProfileMgr = CoCreateInstance(
+                    &CLSID_TF_InputProcessorProfiles,
+                    None,
+                    CLSCTX_INPROC_SERVER,
+                )?;
+                mgr.ActivateProfile(
+                    TF_PROFILETYPE_KEYBOARDLAYOUT,
+                    lang_id,
+                    &GUID::zeroed(),
+                    &GUID::zeroed(),
+                    target_hkl,
+                    TF_IPPMF_FORSESSION,
+                )
+            })();
+            CoUninitialize();
+            res
+        }
     }
 
     fn send_backspaces(count: usize) -> (usize, usize) {
