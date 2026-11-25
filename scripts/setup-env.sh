@@ -168,7 +168,7 @@ if [[ ! -x "${CARGO_HOME}/bin/rustup" ]]; then
 fi
 
 echo "==> Ensuring pinned Rust toolchain from rust-toolchain.toml is installed"
-(cd "${REPO_ROOT}" && rustup show active-toolchain >/dev/null)
+(cd "${REPO_ROOT}" && rustup show active-toolchain >/dev/null 2>&1 || rustup install)
 
 if [[ -f "${REPO_ROOT}/Cargo.toml" ]]; then
   echo "==> Pre-fetching Cargo workspace dependencies into ${CARGO_HOME}"

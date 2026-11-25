@@ -23,8 +23,8 @@ Every pure core module (`key`, `hotkey`, `layout`, `config`, `buffer`, `planner`
 - [x] T002 [P] [US1] Create exact pinned Rust toolchain config in `rust-toolchain.toml` (`channel = "1.100.0"`, `components = ["clippy", "rustfmt"]`, `targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]`) and Windows GNU linker config in `.cargo/config.toml`
 - [x] T003 [US1] Create idempotent bootstrap script `scripts/setup-env.sh` supporting `--check` and `--install-system-deps`, verifying `rustup-init` SHA-256, running `rustup-init -y --no-modify-path` strictly into `.toolchain/rustup` and `.toolchain/cargo`, and pre-fetching Cargo crates
 - [x] T004 [P] [US1] Create isolated Cargo wrapper `scripts/cargo.sh` exporting `RUSTUP_HOME`, `CARGO_HOME`, and `.toolchain/cargo/bin` on `PATH`
-- [ ] T005 [US1] Scaffold 3-crate Cargo workspace (`Cargo.toml`, `crates/langflip-core/Cargo.toml` with `serde`+`toml`, `crates/langflip-platform-win/Cargo.toml` with `[target.'cfg(windows)'.dependencies] windows` incl. `Registry`+`Globalization`+`Accessibility`, `crates/langflip-app/Cargo.toml` with `ctrlc`) and generate/commit `Cargo.lock` *(workspace scaffolded; awaiting `setup-env.sh` run on host to generate `Cargo.lock`)*
-- [ ] T006 [US1] Run `./scripts/setup-env.sh` and verify `~/.rustup`, `~/.cargo`, `~/.profile`, and `~/.bashrc` are untouched and `./scripts/cargo.sh test --workspace --locked` compiles and runs on Linux
+- [x] T005 [US1] Scaffold 3-crate Cargo workspace (`Cargo.toml`, `crates/langflip-core/Cargo.toml` with `serde`+`toml`, `crates/langflip-platform-win/Cargo.toml` with `[target.'cfg(windows)'.dependencies] windows` incl. `Registry`+`Globalization`+`Accessibility`, `crates/langflip-app/Cargo.toml` with `ctrlc`) and generate/commit `Cargo.lock`
+- [x] T006 [US1] Run `./scripts/setup-env.sh` and verify `~/.rustup`, `~/.cargo`, `~/.profile`, and `~/.bashrc` are untouched and `./scripts/cargo.sh test --workspace --locked` compiles and runs on Linux
 
 **Checkpoint**: Isolated, pinned Rust `1.100.0` toolchain and 3-crate workspace verified on Linux with committed `Cargo.lock`.
 
