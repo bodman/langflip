@@ -16,6 +16,7 @@ use crate::focus::is_win11_notepad_foreground;
 pub const LANGFLIP_INJECTED_MARKER: usize = 0x4C46_4C50;
 
 const VK_MASK_UNASSIGNED: VIRTUAL_KEY = VIRTUAL_KEY(0xE8);
+const WINUI_NOTEPAD_SETTLE_MS: u64 = 15;
 const WINUI_NOTEPAD_HOLD_MS: u64 = 4;
 const WINUI_NOTEPAD_GAP_MS: u64 = 12;
 
@@ -65,6 +66,9 @@ impl InputInjector for WinInputInjector {
 /// separating `KEYDOWN` and `KEYUP` so its async input queue never drops or
 /// transposes characters, without touching the user's clipboard.
 fn execute_steps_paced(steps: &[InjectionStep]) -> Result<(), InjectError> {
+    // Give WinUI 3 Notepad a brief moment to finish handling WM_INPUTLANGCHANGE
+    // before the very first Backspace arrives (prevents dropping Backspace #1).
+    thread::sleep(Duration::from_millis(WINUI_NOTEPAD_SETTLE_MS));
     let mut one = Vec::with_capacity(1);
     for step in steps {
         match *step {
