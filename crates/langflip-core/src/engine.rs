@@ -70,6 +70,18 @@ impl ConversionEngine {
         self.policy.buffer()
     }
 
+    /// Live-updates the active layout pair and trigger hotkey, clearing any in-flight burst.
+    pub fn update_config(
+        &mut self,
+        layouts: crate::layout::LayoutPair,
+        hotkey: crate::hotkey::HotkeySpec,
+    ) {
+        self.policy.buffer_mut().clear();
+        self.config.layouts = layouts;
+        self.config.hotkey = hotkey;
+        self.matcher.set_spec(hotkey);
+    }
+
     pub fn handle_event<I, L, F>(
         &mut self,
         event: InputEvent,

@@ -221,53 +221,117 @@ pub fn classify_key(key: PhysicalKey, modifiers: Modifiers) -> KeyKind {
     KeyKind::Other
 }
 
+/// Single DRY table of canonical hotkey names and their hardware `PhysicalKey`s.
+const KEY_NAME_TABLE: &[(&str, PhysicalKey)] = &[
+    ("Pause", scan::PAUSE),
+    ("ScrollLock", scan::SCROLL_LOCK),
+    ("Space", scan::SPACE),
+    ("F1", PhysicalKey::new(0x3B, false)),
+    ("F2", PhysicalKey::new(0x3C, false)),
+    ("F3", PhysicalKey::new(0x3D, false)),
+    ("F4", PhysicalKey::new(0x3E, false)),
+    ("F5", PhysicalKey::new(0x3F, false)),
+    ("F6", PhysicalKey::new(0x40, false)),
+    ("F7", PhysicalKey::new(0x41, false)),
+    ("F8", PhysicalKey::new(0x42, false)),
+    ("F9", PhysicalKey::new(0x43, false)),
+    ("F10", PhysicalKey::new(0x44, false)),
+    ("F11", PhysicalKey::new(0x57, false)),
+    ("F12", PhysicalKey::new(0x58, false)),
+    ("A", PhysicalKey::new(0x1E, false)),
+    ("B", PhysicalKey::new(0x30, false)),
+    ("C", PhysicalKey::new(0x2E, false)),
+    ("D", PhysicalKey::new(0x20, false)),
+    ("E", PhysicalKey::new(0x12, false)),
+    ("F", PhysicalKey::new(0x21, false)),
+    ("G", PhysicalKey::new(0x22, false)),
+    ("H", PhysicalKey::new(0x23, false)),
+    ("I", PhysicalKey::new(0x17, false)),
+    ("J", PhysicalKey::new(0x24, false)),
+    ("K", PhysicalKey::new(0x25, false)),
+    ("L", PhysicalKey::new(0x26, false)),
+    ("M", PhysicalKey::new(0x32, false)),
+    ("N", PhysicalKey::new(0x31, false)),
+    ("O", PhysicalKey::new(0x18, false)),
+    ("P", PhysicalKey::new(0x19, false)),
+    ("Q", PhysicalKey::new(0x10, false)),
+    ("R", PhysicalKey::new(0x13, false)),
+    ("S", PhysicalKey::new(0x1F, false)),
+    ("T", PhysicalKey::new(0x14, false)),
+    ("U", PhysicalKey::new(0x16, false)),
+    ("V", PhysicalKey::new(0x2F, false)),
+    ("W", PhysicalKey::new(0x11, false)),
+    ("X", PhysicalKey::new(0x2D, false)),
+    ("Y", PhysicalKey::new(0x15, false)),
+    ("Z", PhysicalKey::new(0x2C, false)),
+];
+
+/// Canonical physical key names exposed in config files and the Settings UI.
+pub const SUPPORTED_HOTKEY_NAMES: &[&str] = &[
+    "Pause",
+    "ScrollLock",
+    "Space",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+];
+
+/// Reverse-maps a hardware `PhysicalKey` back to its canonical config key name.
+pub fn key_name_for(key: PhysicalKey) -> Option<&'static str> {
+    KEY_NAME_TABLE
+        .iter()
+        .find(|(_, k)| *k == key)
+        .map(|(name, _)| *name)
+}
+
 /// Maps a canonical config key name (case-insensitive, e.g., `"Pause"`, `"F9"`, `"L"`)
 /// to its hardware `PhysicalKey`.
 pub fn parse_key_name(name: &str) -> Option<PhysicalKey> {
-    match name.trim().to_ascii_lowercase().as_str() {
-        "pause" | "pausebreak" | "break" => Some(scan::PAUSE),
-        "scrolllock" | "scroll" => Some(scan::SCROLL_LOCK),
-        "space" => Some(scan::SPACE),
-        "f1" => Some(PhysicalKey::new(0x3B, false)),
-        "f2" => Some(PhysicalKey::new(0x3C, false)),
-        "f3" => Some(PhysicalKey::new(0x3D, false)),
-        "f4" => Some(PhysicalKey::new(0x3E, false)),
-        "f5" => Some(PhysicalKey::new(0x3F, false)),
-        "f6" => Some(PhysicalKey::new(0x40, false)),
-        "f7" => Some(PhysicalKey::new(0x41, false)),
-        "f8" => Some(PhysicalKey::new(0x42, false)),
-        "f9" => Some(PhysicalKey::new(0x43, false)),
-        "f10" => Some(PhysicalKey::new(0x44, false)),
-        "f11" => Some(PhysicalKey::new(0x57, false)),
-        "f12" => Some(PhysicalKey::new(0x58, false)),
-        "q" => Some(PhysicalKey::new(0x10, false)),
-        "w" => Some(PhysicalKey::new(0x11, false)),
-        "e" => Some(PhysicalKey::new(0x12, false)),
-        "r" => Some(PhysicalKey::new(0x13, false)),
-        "t" => Some(PhysicalKey::new(0x14, false)),
-        "y" => Some(PhysicalKey::new(0x15, false)),
-        "u" => Some(PhysicalKey::new(0x16, false)),
-        "i" => Some(PhysicalKey::new(0x17, false)),
-        "o" => Some(PhysicalKey::new(0x18, false)),
-        "p" => Some(PhysicalKey::new(0x19, false)),
-        "a" => Some(PhysicalKey::new(0x1E, false)),
-        "s" => Some(PhysicalKey::new(0x1F, false)),
-        "d" => Some(PhysicalKey::new(0x20, false)),
-        "f" => Some(PhysicalKey::new(0x21, false)),
-        "g" => Some(PhysicalKey::new(0x22, false)),
-        "h" => Some(PhysicalKey::new(0x23, false)),
-        "j" => Some(PhysicalKey::new(0x24, false)),
-        "k" => Some(PhysicalKey::new(0x25, false)),
-        "l" => Some(PhysicalKey::new(0x26, false)),
-        "z" => Some(PhysicalKey::new(0x2C, false)),
-        "x" => Some(PhysicalKey::new(0x2D, false)),
-        "c" => Some(PhysicalKey::new(0x2E, false)),
-        "v" => Some(PhysicalKey::new(0x2F, false)),
-        "b" => Some(PhysicalKey::new(0x30, false)),
-        "n" => Some(PhysicalKey::new(0x31, false)),
-        "m" => Some(PhysicalKey::new(0x32, false)),
-        _ => None,
+    let lower = name.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "pausebreak" | "break" => return Some(scan::PAUSE),
+        "scroll" => return Some(scan::SCROLL_LOCK),
+        _ => {}
     }
+    KEY_NAME_TABLE
+        .iter()
+        .find(|(canonical, _)| canonical.eq_ignore_ascii_case(&lower))
+        .map(|(_, k)| *k)
 }
 
 /// Normalized key press/release event.
@@ -335,6 +399,18 @@ mod tests {
         assert_eq!(parse_key_name("L"), Some(PhysicalKey::new(0x26, false)));
         assert_eq!(parse_key_name("l"), Some(PhysicalKey::new(0x26, false)));
         assert_eq!(parse_key_name("NonExistentKey"), None);
+    }
+
+    #[test]
+    fn supported_hotkey_names_round_trip_with_parse_and_key_name_for() {
+        assert!(!SUPPORTED_HOTKEY_NAMES.is_empty());
+        assert!(SUPPORTED_HOTKEY_NAMES.contains(&"Pause"));
+        assert!(SUPPORTED_HOTKEY_NAMES.contains(&"F9"));
+        assert!(SUPPORTED_HOTKEY_NAMES.contains(&"L"));
+        for &name in SUPPORTED_HOTKEY_NAMES {
+            let key = parse_key_name(name).unwrap_or_else(|| panic!("missing key for {name}"));
+            assert_eq!(key_name_for(key), Some(name));
+        }
     }
 
     #[test]

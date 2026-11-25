@@ -522,3 +522,47 @@ fn empty_buffer_with_active_selection_never_sends_backspaces() {
     assert_eq!(out, EngineOutcome::LayoutToggled(he()));
     assert!(injector.executed.is_empty());
 }
+
+#[test]
+fn update_config_clears_burst_and_applies_new_hotkey_and_layouts_live() {
+    let overflow = Arc::new(AtomicBool::new(false));
+    let latest_seq = Arc::new(AtomicU64::new(1));
+    let mut engine = ConversionEngine::new(make_config(), overflow, latest_seq.clone());
+    let mut injector = MockInjector::default();
+    let mut layouts = MockLayouts::new(he());
+    let focus = MockFocus::new(1);
+
+    // Buffer 1 char under old config
+    engine.handle_event(key_down(PhysicalKey::new(0x23, false), Modifiers::default(), he(), 1, 1), &mut injector, &mut layouts, &focus);
+    assert_eq!(engine.buffer().len(), 1);
+
+    // Live-update to F9 + (he <-> third)
+    let f9 = PhysicalKey::new(0x43, false);
+    let new_hotkey = langflip_core::hotkey::HotkeySpec {
+        key: f9,
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+    };
+    engine.update_config(
+        LayoutPair {
+            primary: he(),
+            secondary: third(),
+        },
+        new_hotkey,
+    );
+    assert!(engine.buffer().is_empty(), "update_config must clear in-flight burst");
+
+    // Old Pause key now passes through (ignored)
+    assert_eq!(
+        engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), he(), 1, 1), &mut injector, &mut layouts, &focus),
+        EngineOutcome::Ignored
+    );
+
+    // New F9 hotkey toggles he -> third
+    assert_eq!(
+        engine.handle_event(key_down(f9, Modifiers::default(), he(), 1, 1), &mut injector, &mut layouts, &focus),
+        EngineOutcome::LayoutToggled(third())
+    );
+}

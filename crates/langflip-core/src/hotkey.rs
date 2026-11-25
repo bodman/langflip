@@ -55,6 +55,11 @@ impl HotkeyMatcher {
         self.spec
     }
 
+    pub fn set_spec(&mut self, spec: HotkeySpec) {
+        self.spec = spec;
+        self.hotkey_held = false;
+    }
+
     pub fn on_key_down(&mut self, key: PhysicalKey, modifiers: Modifiers) -> HotkeyDecision {
         let matches = key == self.spec.key
             && modifiers.any_ctrl() == self.spec.ctrl

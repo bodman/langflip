@@ -10,7 +10,7 @@ use std::sync::mpsc::SyncSender;
 
 use crate::hotkey::HotkeySpec;
 use crate::key::{InputEvent, PhysicalKey};
-use crate::layout::{InstalledLayout, LayoutId};
+use crate::layout::{InstalledLayout, LayoutId, LayoutPair};
 
 /// Opaque identifier for a foreground focus target (e.g., `HWND` value on Windows).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,4 +125,31 @@ pub trait InputListener {
     ) -> Result<(), Self::Error>
     where
         F: FnOnce(Self::Shutdown);
+}
+
+/// Current settings snapshot handed to the OS tray / Settings UI.
+#[derive(Debug, Clone)]
+pub struct SettingsSnapshot {
+    pub installed_layouts: Vec<InstalledLayout>,
+    pub layouts: LayoutPair,
+    pub hotkey: HotkeySpec,
+}
+
+/// Cross-platform system tray & Settings UI seam.
+///
+/// Implemented natively per OS (`Shell_NotifyIconW` on Windows, `NSStatusItem` on
+/// macOS, StatusNotifier/GTK on Linux) while all validation, persistence, and
+/// live engine updates stay in `langflip-core`.
+pub trait TrayHost {
+    type Error: fmt::Display;
+
+    fn run<S, E>(
+        self,
+        initial: SettingsSnapshot,
+        on_save: S,
+        on_exit: E,
+    ) -> Result<(), Self::Error>
+    where
+        S: FnMut(LayoutPair, HotkeySpec) -> Result<(), String> + 'static,
+        E: FnOnce() + 'static;
 }
