@@ -1,0 +1,48 @@
+//! Foreground window & GUI-thread focus observer (`T028`, Phase 2 UIA seam).
+
+use langflip_core::ports::{ControlKind, FocusContext, FocusId, FocusObserver};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GUITHREADINFO, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId,
+};
+
+/// Returns `(focus_hwnd, focus_thread_id)` for the currently focused input control,
+/// falling back to the top-level foreground window if `GetGUIThreadInfo` is unavailable.
+///
+/// Phase 1.5 proved this is essential on Windows 11 Notepad where `fg_tid != focus_tid`.
+pub(crate) fn foreground_gui_target() -> Option<(HWND, u32)> {
+    let fg_hwnd = unsafe { GetForegroundWindow() };
+    if fg_hwnd.0.is_null() {
+        return None;
+    }
+    let fg_tid = unsafe { GetWindowThreadProcessId(fg_hwnd, None) };
+    let mut gui = GUITHREADINFO {
+        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+        ..Default::default()
+    };
+    let focus_hwnd = if unsafe { GetGUIThreadInfo(fg_tid, &mut gui) }.is_ok()
+        && !gui.hwndFocus.0.is_null()
+    {
+        gui.hwndFocus
+    } else {
+        fg_hwnd
+    };
+    let focus_tid = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
+    Some((focus_hwnd, focus_tid))
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct WinFocusObserver;
+
+impl FocusObserver for WinFocusObserver {
+    fn current_focus(&self) -> FocusContext {
+        let focus_id = foreground_gui_target()
+            .map(|(hwnd, _)| FocusId(hwnd.0 as usize as u64))
+            .unwrap_or(FocusId(0));
+        FocusContext {
+            focus_id,
+            element_id: None,
+            control_kind: ControlKind::Unknown,
+        }
+    }
+}

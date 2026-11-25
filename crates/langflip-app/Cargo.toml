@@ -10,8 +10,8 @@ name = "langflip"
 path = "src/main.rs"
 
 [dependencies]
-ctrlc.workspace = true
 langflip-core = { path = "../langflip-core" }
 
 [target.'cfg(windows)'.dependencies]
+ctrlc.workspace = true
 langflip-platform-win = { path = "../langflip-platform-win" }

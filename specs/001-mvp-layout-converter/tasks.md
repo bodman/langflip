@@ -88,13 +88,13 @@ Every pure core module (`key`, `hotkey`, `layout`, `config`, `buffer`, `planner`
 
 **Independent Test**: `./scripts/cargo.sh build --release --locked --target x86_64-pc-windows-gnu -p langflip-app` produces `target/x86_64-pc-windows-gnu/release/langflip.exe` with zero warnings.
 
-- [ ] T026 [P] [US2] Implement thin Windows `InputInjector` translating `InjectionStep` to `SendInput` (`KEYEVENTF_SCANCODE`, `KEYEVENTF_EXTENDEDKEY`, `VK_E8` mask key, `dwExtraInfo = 0x4C46_4C50`, `sent < expected` → `PartialInjection`) in `crates/langflip-platform-win/src/injector.rs`
-- [ ] T027 [P] [US2] Implement thin Windows `LayoutController` (`GetGUIThreadInfo`, `GetKeyboardLayoutList` + registry `KLID` lookup, `WM_INPUTLANGCHANGEREQUEST` + confirmation poll) in `crates/langflip-platform-win/src/layout.rs`
-- [ ] T028 [P] [US2] Implement foreground `HWND` `FocusObserver` in `crates/langflip-platform-win/src/focus.rs`
-- [ ] T029 [US2] Implement non-blocking `WH_KEYBOARD_LL` + `WH_MOUSE_LL` + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` `InputListener` delegating hotkey/repeat decisions to `langflip-core::hotkey::HotkeyMatcher`, tagging each key event with `active_layout` + `InjectedBy`, advancing `latest_seq` only on mutating events, using bounded `SyncSender::try_send`, and waking idle `GetMessageW` via `PostThreadMessageW(WM_QUIT)` in `crates/langflip-platform-win/src/hook.rs`
-- [ ] T030 [US2] Wire public exports in `crates/langflip-platform-win/src/lib.rs` (gated for Windows target)
-- [ ] T031 [US3] Implement `crates/langflip-app/src/main.rs`: load config (exe dir → OS config dir → defaults, fail-fast on invalid), run `resolve_layouts` startup warnings, run bounded-channel `ConversionEngine` loop, support `--metrics` timing output (never logging keystrokes), and wire `Ctrl+C` to `ListenerShutdown::stop()`
-- [ ] T032 [US1] Verify/update `Cargo.lock` if needed and cross-compile `langflip.exe` via `./scripts/cargo.sh build --release --locked --target x86_64-pc-windows-gnu -p langflip-app`
+- [x] T026 [P] [US2] Implement thin Windows `InputInjector` translating `InjectionStep` to `SendInput` (`KEYEVENTF_SCANCODE`, `KEYEVENTF_EXTENDEDKEY`, `VK_E8` mask key, `dwExtraInfo = 0x4C46_4C50`, `sent < expected` → `PartialInjection`) in `crates/langflip-platform-win/src/injector.rs`
+- [x] T027 [P] [US2] Implement thin Windows `LayoutController` (`GetGUIThreadInfo`, `GetKeyboardLayoutList` + registry `KLID` lookup, `WM_INPUTLANGCHANGEREQUEST` + confirmation poll) in `crates/langflip-platform-win/src/layout.rs`
+- [x] T028 [P] [US2] Implement foreground `HWND` `FocusObserver` in `crates/langflip-platform-win/src/focus.rs`
+- [x] T029 [US2] Implement non-blocking `WH_KEYBOARD_LL` + `WH_MOUSE_LL` + `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` `InputListener` delegating hotkey/repeat decisions to `langflip-core::hotkey::HotkeyMatcher`, tagging each key event with `active_layout` + `InjectedBy`, advancing `latest_seq` only on mutating events, using bounded `SyncSender::try_send`, and waking idle `GetMessageW` via `PostThreadMessageW(WM_QUIT)` in `crates/langflip-platform-win/src/hook.rs`
+- [x] T030 [US2] Wire public exports in `crates/langflip-platform-win/src/lib.rs` (gated for Windows target)
+- [x] T031 [US3] Implement `crates/langflip-app/src/main.rs`: load config (exe dir → OS config dir → defaults, fail-fast on invalid), run `resolve_layouts` startup warnings, run bounded-channel `ConversionEngine` loop, support `--metrics` timing output (never logging keystrokes), and wire `Ctrl+C` to `ListenerShutdown::stop()`
+- [x] T032 [US1] Verify/update `Cargo.lock` if needed and cross-compile `langflip.exe` via `./scripts/cargo.sh build --release --locked --target x86_64-pc-windows-gnu -p langflip-app`
 
 **Checkpoint**: Standalone `langflip.exe` built from Linux using the isolated pinned toolchain and committed `Cargo.lock`.
 
@@ -102,8 +102,8 @@ Every pure core module (`key`, `hotkey`, `layout`, `config`, `buffer`, `planner`
 
 ## Phase 5: Polish, Cross-Target Linting & Windows 11 Verification
 
-- [ ] T033 [P] Run `./scripts/cargo.sh test --workspace --locked`, `./scripts/cargo.sh clippy --workspace --all-targets --locked -- -D warnings`, and `./scripts/cargo.sh clippy --target x86_64-pc-windows-gnu --workspace --locked -- -D warnings`
-- [ ] T034 [P] Add concise root `README.md` linking to `specs/001-mvp-layout-converter/quickstart.md`, `langflip.example.toml`, and the Phase 2–4 growth roadmap
+- [x] T033 [P] Run `./scripts/cargo.sh test --workspace --locked`, `./scripts/cargo.sh clippy --workspace --all-targets --locked -- -D warnings`, and `./scripts/cargo.sh clippy --target x86_64-pc-windows-gnu --workspace --locked -- -D warnings`
+- [x] T034 [P] Add concise root `README.md` linking to `specs/001-mvp-layout-converter/quickstart.md`, `langflip.example.toml`, and the Phase 2–4 growth roadmap
 - [ ] T035 Execute the full `specs/001-mvp-layout-converter/quickstart.md` Windows 11 verification checklist (Notepad, Chrome/Edge, Windows Terminal/PowerShell, round-trip double-tap vs. hold, reset boundaries, custom combo hotkey `Ctrl+Shift+L`, missing/ambiguous layout warnings & fail-fast invalid config, elevated PowerShell non-interception, `< 150 ms` conversion & `< 1 ms` hook callback via `--metrics`, and idle `Ctrl+C` shutdown < 500 ms)
 
 ---
