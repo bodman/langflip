@@ -13,7 +13,7 @@ use crate::layout::{LayoutId, LayoutPair};
 pub const DEFAULT_MAX_BUFFER_LEN: usize = 128;
 pub const MIN_BUFFER_LEN: usize = 1;
 pub const MAX_BUFFER_LEN: usize = 512;
-pub const DEFAULT_REPLAY_DELAY_MS: u64 = 0;
+pub const DEFAULT_REPLAY_DELAY_MS: u64 = 1;
 pub const MAX_REPLAY_DELAY_MS: u64 = 10;
 
 /// Validated runtime configuration for LangFlip.
@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(cfg.layouts.secondary, LayoutId::new("he"));
         assert_eq!(cfg.hotkey.key, scan::PAUSE);
         assert_eq!(cfg.max_buffer_len, 128);
-        assert_eq!(cfg.replay_delay_ms, 0);
+        assert_eq!(cfg.replay_delay_ms, 1);
         assert!(cfg.toggle_on_empty_buffer);
     }
 

@@ -115,6 +115,7 @@ fn make_config() -> AppConfig {
             primary: en(),
             secondary: he(),
         },
+        replay_delay_ms: 0,
         ..AppConfig::default()
     }
 }

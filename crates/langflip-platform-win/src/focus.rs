@@ -1,9 +1,12 @@
 //! Foreground window & GUI-thread focus observer (`T028`, Phase 2 UIA seam).
 
+use std::ffi::OsString;
+use std::os::windows::ffi::OsStringExt;
+
 use langflip_core::ports::{ControlKind, FocusContext, FocusId, FocusObserver};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GUITHREADINFO, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId,
+    GUITHREADINFO, GetClassNameW, GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId,
 };
 
 /// Returns `(focus_hwnd, focus_thread_id)` for the currently focused input control,
@@ -29,6 +32,33 @@ pub(crate) fn foreground_gui_target() -> Option<(HWND, u32)> {
     };
     let focus_tid = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
     Some((focus_hwnd, focus_tid))
+}
+
+/// Returns `true` when the foreground app is Windows 11's WinUI 3 Notepad
+/// (`Notepad` / `RichEditD2DPT`), which is known to drop or reorder rapid
+/// zero-hold `SendInput` bursts.
+pub(crate) fn is_win11_notepad_foreground() -> bool {
+    let fg_hwnd = unsafe { GetForegroundWindow() };
+    if !fg_hwnd.0.is_null() && window_class_name(fg_hwnd).eq_ignore_ascii_case("Notepad") {
+        return true;
+    }
+    if let Some((focus_hwnd, _)) = foreground_gui_target()
+        && window_class_name(focus_hwnd).eq_ignore_ascii_case("RichEditD2DPT")
+    {
+        return true;
+    }
+    false
+}
+
+fn window_class_name(hwnd: HWND) -> String {
+    let mut buf = [0u16; 128];
+    let len = unsafe { GetClassNameW(hwnd, &mut buf) };
+    if len <= 0 {
+        return String::new();
+    }
+    OsString::from_wide(&buf[..len as usize])
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[derive(Debug, Default, Clone, Copy)]

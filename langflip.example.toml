@@ -26,7 +26,7 @@ meta = false
 [behavior]
 # Maximum buffered keystrokes per burst (valid range: 1..=512).
 max_buffer_len = 128
-# Per-keystroke delay during replay in milliseconds (valid range: 0..=10; 0 = batched).
-replay_delay_ms = 0
+# Per-keystroke delay during replay in milliseconds (valid range: 0..=10; 1 ms prevents drops in WinUI/Notepad).
+replay_delay_ms = 1
 # If true, pressing the hotkey on an empty buffer toggles the keyboard layout.
 toggle_on_empty_buffer = true
