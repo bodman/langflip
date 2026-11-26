@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 410" width="700" height="410">
+  <defs>
+    <filter id="sh3" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0B1018" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <style>
+    .s { font-family: "Segoe UI", -apple-system, sans-serif; }
+    .m { font-family: Consolas, ui-monospace, monospace; }
+  </style>
+  <rect width="700" height="410" rx="12" fill="#1B2028"/>
+
+  <!-- Settings Window: Nord Calm -->
+  <g filter="url(#sh3)">
+    <rect x="24" y="22" width="440" height="366" rx="10" fill="#242933" stroke="#3B4252" stroke-width="1"/>
+    <text x="44" y="47" class="s" font-size="12" fill="#9AA5B8">LangFlip Settings</text>
+    <text x="442" y="47" class="s" font-size="13" fill="#7B889E">✕</text>
+    <line x1="25" y1="58" x2="463" y2="58" stroke="#2E3440" stroke-width="1"/>
+
+    <text x="44" y="88" class="s" font-size="18" font-weight="600" fill="#ECEFF4">Keyboard &amp; Shortcut</text>
+    <text x="44" y="106" class="s" font-size="12" fill="#8C99AE">Pick two installed layouts and your flip key</text>
+
+    <!-- Card 1 -->
+    <rect x="44" y="122" width="400" height="104" rx="8" fill="#2E3440" stroke="#3B4252" stroke-width="1"/>
+    <text x="60" y="143" class="s" font-size="10.5" font-weight="600" letter-spacing="0.6" fill="#88C0D0">LANGUAGES</text>
+
+    <text x="60" y="172" class="s" font-size="13" fill="#D8DEE9">Primary</text>
+    <rect x="154" y="152" width="274" height="30" rx="5" fill="#242933" stroke="#434C5E" stroke-width="1"/>
+    <text x="166" y="172" class="s" font-size="13" fill="#ECEFF4">English (India)</text>
+    <text x="408" y="172" class="s" font-size="11" fill="#8C99AE">▾</text>
+
+    <text x="60" y="208" class="s" font-size="13" fill="#D8DEE9">Secondary</text>
+    <rect x="154" y="188" width="274" height="30" rx="5" fill="#242933" stroke="#434C5E" stroke-width="1"/>
+    <text x="166" y="208" class="s" font-size="13" fill="#ECEFF4">Hebrew</text>
+    <text x="408" y="208" class="s" font-size="11" fill="#8C99AE">▾</text>
+
+    <!-- Card 2 -->
+    <rect x="44" y="238" width="400" height="92" rx="8" fill="#2E3440" stroke="#3B4252" stroke-width="1"/>
+    <text x="60" y="259" class="s" font-size="10.5" font-weight="600" letter-spacing="0.6" fill="#88C0D0">HOTKEY</text>
+
+    <text x="60" y="286" class="s" font-size="13" fill="#D8DEE9">Key</text>
+    <rect x="154" y="266" width="136" height="28" rx="5" fill="#242933" stroke="#434C5E" stroke-width="1"/>
+    <text x="166" y="285" class="s" font-size="13" fill="#ECEFF4">Pause</text>
+    <text x="272" y="285" class="s" font-size="11" fill="#8C99AE">▾</text>
+
+    <text x="60" y="317" class="s" font-size="13" fill="#D8DEE9">Modifiers</text>
+    <rect x="154" y="300" width="52" height="23" rx="5" fill="#242933" stroke="#434C5E" stroke-width="1"/>
+    <text x="180" y="316" text-anchor="middle" class="s" font-size="11.5" fill="#9AA5B8">Ctrl</text>
+    <rect x="214" y="300" width="48" height="23" rx="5" fill="#242933" stroke="#434C5E" stroke-width="1"/>
+    <text x="238" y="316" text-anchor="middle" class="s" font-size="11.5" fill="#9AA5B8">Alt</text>
+    <rect x="270" y="300" width="56" height="23" rx="5" fill="#324B57" stroke="#88C0D0" stroke-width="1"/>
+    <text x="298" y="316" text-anchor="middle" class="s" font-size="11.5" font-weight="600" fill="#E5F4F8">Shift</text>
+    <rect x="334" y="300" width="52" height="23" rx="5" fill="#242933" stroke="#434C5E" stroke-width="1"/>
+    <text x="360" y="316" text-anchor="middle" class="s" font-size="11.5" fill="#9AA5B8">Win</text>
+
+    <!-- Footer Buttons -->
+    <rect x="272" y="344" width="82" height="30" rx="6" fill="#5E81AC"/>
+    <text x="313" y="363" text-anchor="middle" class="s" font-size="13" font-weight="600" fill="#ECEFF4">Save</text>
+    <rect x="362" y="344" width="82" height="30" rx="6" fill="#2E3440" stroke="#434C5E" stroke-width="1"/>
+    <text x="403" y="363" text-anchor="middle" class="s" font-size="13" fill="#D8DEE9">Cancel</text>
+  </g>
+
+  <!-- Tray Popup Menu Preview -->
+  <text x="502" y="136" class="s" font-size="11" font-weight="600" fill="#7B889E">TRAY MENU</text>
+  <g filter="url(#sh3)">
+    <rect x="500" y="148" width="174" height="108" rx="8" fill="#2E3440" stroke="#434C5E" stroke-width="1"/>
+    <text x="516" y="172" class="s" font-size="11.5" font-weight="600" fill="#88C0D0">LangFlip</text>
+    <line x1="510" y1="182" x2="664" y2="182" stroke="#3B4252" stroke-width="1"/>
+    <rect x="506" y="188" width="162" height="28" rx="5" fill="#3B4252"/>
+    <text x="518" y="206" class="s" font-size="13" fill="#ECEFF4">Settings...</text>
+    <text x="518" y="238" class="s" font-size="13" fill="#D8DEE9">Exit</text>
+  </g>
+</svg>
