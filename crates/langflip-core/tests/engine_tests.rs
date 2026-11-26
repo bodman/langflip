@@ -5,11 +5,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use langflip_core::config::AppConfig;
 use langflip_core::engine::{ConversionEngine, EngineOutcome};
-use langflip_core::key::{InjectedBy, InputEvent, KeyEvent, Modifiers, PhysicalKey, scan};
+use langflip_core::key::{
+    BufferedKeystroke, InjectedBy, InputEvent, KeyEvent, Modifiers, PhysicalKey, scan,
+};
 use langflip_core::layout::{InstalledLayout, LayoutId, LayoutPair};
 use langflip_core::ports::{
-    ControlKind, FocusContext, FocusId, FocusObserver, InjectError, InjectionStep, InputInjector,
-    LayoutController, LayoutSwitchOutcome,
+    ControlKind, FallbackText, FocusContext, FocusId, FocusObserver, InjectError, InjectionStep,
+    InputInjector, LayoutController, LayoutSwitchOutcome,
 };
 
 #[derive(Default)]
@@ -33,6 +35,8 @@ struct MockLayouts {
     accept_switch: bool,
     switch_requests: Vec<LayoutId>,
     on_switch: Option<Box<dyn FnMut()>>,
+    /// Optional reverse-mapping table: (layout, text) -> keystrokes
+    reverse_map: Vec<(LayoutId, String, Vec<BufferedKeystroke>)>,
 }
 
 impl MockLayouts {
@@ -42,6 +46,7 @@ impl MockLayouts {
             accept_switch: true,
             switch_requests: Vec::new(),
             on_switch: None,
+            reverse_map: Vec::new(),
         }
     }
 }
@@ -73,11 +78,19 @@ impl LayoutController for MockLayouts {
     fn list_installed_layouts(&self) -> Result<Vec<InstalledLayout>, Self::Error> {
         Ok(vec![])
     }
+
+    fn text_to_keystrokes(&self, text: &str, layout: &LayoutId) -> Option<Vec<BufferedKeystroke>> {
+        self.reverse_map
+            .iter()
+            .find(|(l, t, _)| l == layout && t == text)
+            .map(|(_, _, strokes)| strokes.clone())
+    }
 }
 
 struct MockFocus {
     current: Arc<AtomicU64>,
     has_selection: Arc<AtomicBool>,
+    fallback: Option<FallbackText>,
 }
 
 impl MockFocus {
@@ -85,6 +98,7 @@ impl MockFocus {
         Self {
             current: Arc::new(AtomicU64::new(id)),
             has_selection: Arc::new(AtomicBool::new(false)),
+            fallback: None,
         }
     }
 }
@@ -100,6 +114,14 @@ impl FocusObserver for MockFocus {
 
     fn has_active_selection(&self) -> bool {
         self.has_selection.load(Ordering::SeqCst)
+    }
+
+    fn read_line_before_caret(&self, max_len: usize) -> Option<FallbackText> {
+        let fb = self.fallback.as_ref()?;
+        if fb.text.chars().count() > max_len {
+            return None;
+        }
+        Some(fb.clone())
     }
 }
 
@@ -565,4 +587,166 @@ fn update_config_clears_burst_and_applies_new_hotkey_and_layouts_live() {
         engine.handle_event(key_down(f9, Modifiers::default(), he(), 1, 1), &mut injector, &mut layouts, &focus),
         EngineOutcome::LayoutToggled(third())
     );
+}
+
+// ============================================================================
+// Spec 005 — Empty-Buffer Current-Line / Single-Line Fallback
+// ============================================================================
+
+#[test]
+fn empty_buffer_fallback_converts_line_before_caret_and_enables_round_trip() {
+    let overflow = Arc::new(AtomicBool::new(false));
+    let latest_seq = Arc::new(AtomicU64::new(5));
+    let mut engine = ConversionEngine::new(make_config(), overflow, latest_seq.clone());
+    let mut injector = MockInjector::default();
+    let mut layouts = MockLayouts::new(he());
+    let strokes = vec![
+        BufferedKeystroke { key: PhysicalKey::new(0x23, false), shift: false },
+        BufferedKeystroke { key: PhysicalKey::new(0x12, false), shift: false },
+    ];
+    layouts.reverse_map.push((he(), "יק".into(), strokes.clone()));
+
+    let mut focus = MockFocus::new(1);
+    focus.fallback = Some(FallbackText {
+        text: "יק".into(),
+        replaces_selection: false,
+    });
+
+    // Live buffer is empty (e.g. after accidental PrintScreen -> Snipping Tool -> Esc)
+    let out = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), he(), 1, 5), &mut injector, &mut layouts, &focus);
+    assert_eq!(
+        out,
+        EngineOutcome::Converted {
+            erased: 2,
+            replayed: 2,
+            new_layout: en(),
+        }
+    );
+    assert_eq!(layouts.switch_requests, vec![en()]);
+    assert_eq!(
+        injector.executed[0],
+        vec![
+            InjectionStep::KeyTap { key: scan::BACKSPACE, shift: false },
+            InjectionStep::KeyTap { key: scan::BACKSPACE, shift: false },
+            InjectionStep::KeyTap { key: PhysicalKey::new(0x23, false), shift: false },
+            InjectionStep::KeyTap { key: PhysicalKey::new(0x12, false), shift: false },
+        ]
+    );
+    assert_eq!(engine.buffer().len(), 2, "live buffer should retain converted strokes for round-trip");
+
+    // Second Pause press cleanly round-trips back to HE using the retained buffer!
+    engine.handle_event(key_up(scan::PAUSE, en(), 1, 5), &mut injector, &mut layouts, &focus);
+    let out2 = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), en(), 1, 5), &mut injector, &mut layouts, &focus);
+    assert_eq!(
+        out2,
+        EngineOutcome::Converted {
+            erased: 2,
+            replayed: 2,
+            new_layout: he(),
+        }
+    );
+}
+
+#[test]
+fn empty_buffer_fallback_handles_already_toggled_layout_without_double_switching() {
+    let overflow = Arc::new(AtomicBool::new(false));
+    let latest_seq = Arc::new(AtomicU64::new(3));
+    let mut engine = ConversionEngine::new(make_config(), overflow, latest_seq);
+    let mut injector = MockInjector::default();
+    // Active layout is ALREADY English, while mistyped Hebrew sits before caret
+    let mut layouts = MockLayouts::new(en());
+    let strokes = vec![
+        BufferedKeystroke { key: PhysicalKey::new(0x23, false), shift: false },
+        BufferedKeystroke { key: PhysicalKey::new(0x12, false), shift: false },
+    ];
+    layouts.reverse_map.push((he(), "יק".into(), strokes));
+
+    let mut focus = MockFocus::new(1);
+    focus.fallback = Some(FallbackText {
+        text: "יק".into(),
+        replaces_selection: false,
+    });
+
+    let out = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), en(), 1, 3), &mut injector, &mut layouts, &focus);
+    assert_eq!(
+        out,
+        EngineOutcome::Converted {
+            erased: 2,
+            replayed: 2,
+            new_layout: en(),
+        }
+    );
+    assert!(layouts.switch_requests.is_empty(), "must stay in EN without switching back to HE");
+    assert_eq!(injector.executed.len(), 1);
+}
+
+#[test]
+fn empty_buffer_fallback_with_active_selection_erases_once_and_replays() {
+    let overflow = Arc::new(AtomicBool::new(false));
+    let latest_seq = Arc::new(AtomicU64::new(1));
+    let mut engine = ConversionEngine::new(make_config(), overflow, latest_seq);
+    let mut injector = MockInjector::default();
+    let mut layouts = MockLayouts::new(he());
+    let strokes = vec![
+        BufferedKeystroke { key: PhysicalKey::new(0x23, false), shift: false },
+        BufferedKeystroke { key: PhysicalKey::new(0x12, false), shift: false },
+        BufferedKeystroke { key: PhysicalKey::new(0x26, false), shift: false },
+    ];
+    layouts.reverse_map.push((he(), "יקך".into(), strokes));
+
+    let mut focus = MockFocus::new(1);
+    focus.fallback = Some(FallbackText {
+        text: "יקך".into(),
+        replaces_selection: true,
+    });
+
+    let out = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), he(), 1, 1), &mut injector, &mut layouts, &focus);
+    assert_eq!(
+        out,
+        EngineOutcome::Converted {
+            erased: 1, // 1 Backspace deletes entire selection
+            replayed: 3,
+            new_layout: en(),
+        }
+    );
+}
+
+#[test]
+fn empty_buffer_fallback_skips_whitespace_or_unmappable_text_and_toggles_safely() {
+    let overflow = Arc::new(AtomicBool::new(false));
+    let latest_seq = Arc::new(AtomicU64::new(0));
+    let mut engine = ConversionEngine::new(make_config(), overflow, latest_seq);
+    let mut injector = MockInjector::default();
+    let mut layouts = MockLayouts::new(en());
+
+    // Whitespace-only line -> toggle only, never erase
+    let mut focus = MockFocus::new(1);
+    focus.fallback = Some(FallbackText {
+        text: "   ".into(),
+        replaces_selection: false,
+    });
+    let out = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), en(), 1, 0), &mut injector, &mut layouts, &focus);
+    assert_eq!(out, EngineOutcome::LayoutToggled(he()));
+    assert!(injector.executed.is_empty());
+
+    // Unmappable text (e.g. emoji) -> toggle only, never erase
+    engine.handle_event(key_up(scan::PAUSE, he(), 1, 0), &mut injector, &mut layouts, &focus);
+    focus.fallback = Some(FallbackText {
+        text: "🚀".into(),
+        replaces_selection: false,
+    });
+    let out2 = engine.handle_event(key_down(scan::PAUSE, Modifiers::default(), he(), 1, 0), &mut injector, &mut layouts, &focus);
+    assert_eq!(out2, EngineOutcome::LayoutToggled(en()));
+    assert!(injector.executed.is_empty());
+}
+
+#[test]
+fn fallback_text_debug_never_leaks_contents() {
+    let fb = FallbackText {
+        text: "secret-password".into(),
+        replaces_selection: false,
+    };
+    let dbg = format!("{fb:?}");
+    assert!(dbg.contains("char_len: 15"), "expected char_len in Debug: {dbg}");
+    assert!(!dbg.contains("secret"), "Debug leaked fallback text: {dbg}");
 }

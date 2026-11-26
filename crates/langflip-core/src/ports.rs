@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::mpsc::SyncSender;
 
 use crate::hotkey::HotkeySpec;
-use crate::key::{InputEvent, PhysicalKey};
+use crate::key::{BufferedKeystroke, InputEvent, PhysicalKey};
 use crate::layout::{InstalledLayout, LayoutId, LayoutPair};
 
 /// Opaque identifier for a foreground focus target (e.g., `HWND` value on Windows).
@@ -33,6 +33,26 @@ pub struct FocusContext {
     pub control_kind: ControlKind,
 }
 
+/// RAM-only text read from the focused editable control when the live buffer is empty.
+///
+/// Privacy invariant: `Debug` NEVER prints text contents.
+#[derive(Clone, PartialEq, Eq)]
+pub struct FallbackText {
+    pub text: String,
+    /// `true` when `text` came from an active selection (1 Backspace erases it);
+    /// `false` when `text` is the current line before the caret (`text.chars().count()` Backspaces).
+    pub replaces_selection: bool,
+}
+
+impl fmt::Debug for FallbackText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FallbackText")
+            .field("char_len", &self.text.chars().count())
+            .field("replaces_selection", &self.replaces_selection)
+            .finish()
+    }
+}
+
 /// Observes foreground focus target and control metadata.
 pub trait FocusObserver {
     fn current_focus(&self) -> FocusContext;
@@ -43,6 +63,16 @@ pub trait FocusObserver {
     fn has_active_selection(&self) -> bool {
         false
     }
+
+    /// Reads the current line before the caret (or active single-line selection)
+    /// from an editable, non-password, non-terminal control when the live keystroke
+    /// buffer is empty. Returns `None` if unavailable, unsafe, or longer than `max_len`.
+    fn read_line_before_caret(&self, _max_len: usize) -> Option<FallbackText> {
+        None
+    }
+
+    /// Collapses a synthetic fallback selection if conversion is aborted before erasure.
+    fn clear_fallback_selection(&self) {}
 }
 
 /// Low-level injection step planned by `langflip-core::planner::plan_injection`.
@@ -103,6 +133,17 @@ pub trait LayoutController {
     ) -> Result<LayoutSwitchOutcome, Self::Error>;
 
     fn list_installed_layouts(&self) -> Result<Vec<InstalledLayout>, Self::Error>;
+
+    /// Reverse-maps Unicode text into physical keystrokes under `layout`.
+    /// Returns `None` if any character cannot be represented cleanly without
+    /// non-Shift modifiers or if the layout is unavailable.
+    fn text_to_keystrokes(
+        &self,
+        _text: &str,
+        _layout: &LayoutId,
+    ) -> Option<Vec<BufferedKeystroke>> {
+        None
+    }
 }
 
 /// Wake-up handle allowing idle OS message pumps (e.g., `GetMessageW`) to exit immediately.
