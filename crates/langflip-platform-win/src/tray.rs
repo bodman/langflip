@@ -1,5 +1,5 @@
-//! Native Windows 11 system tray icon, right-click context menu (Settings / Exit),
-//! single-instance mutex guard, and Settings dialog (`T010`).
+//! Modern Windows 11 system tray icon, Fluent-themed right-click context menu
+//! (Settings / Exit), single-instance mutex guard, and styled Settings dialog.
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -9,38 +9,53 @@ use langflip_core::key::{SUPPORTED_HOTKEY_NAMES, key_name_for, parse_key_name};
 use langflip_core::layout::LayoutPair;
 use langflip_core::ports::{SettingsSnapshot, TrayHost};
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT,
-    POINT, WPARAM,
+    COLORREF, CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HINSTANCE, HWND, LPARAM,
+    LRESULT, POINT, RECT, WPARAM,
+};
+use windows::Win32::Graphics::Dwm::{
+    DWM_WINDOW_CORNER_PREFERENCE, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWMWCP_ROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    CLEARTYPE_QUALITY, COLOR_BTNFACE, CreateFontW, DEFAULT_CHARSET, DEFAULT_PITCH, DeleteObject,
-    FF_SWISS, FW_NORMAL, HBRUSH, HFONT, OUT_DEFAULT_PRECIS,
+    BeginPaint, CLEARTYPE_QUALITY, CreateFontW, CreatePen, CreateSolidBrush, DEFAULT_CHARSET,
+    DEFAULT_PITCH, DeleteObject, DrawTextW, DT_CENTER, DT_SINGLELINE, DT_VCENTER, EndPaint,
+    FF_SWISS, FW_NORMAL, FW_SEMIBOLD, FillRect, HBRUSH, HDC, HFONT, OUT_DEFAULT_PRECIS,
+    PAINTSTRUCT, PS_SOLID, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor,
+    TRANSPARENT,
 };
 use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+use windows::Win32::System::Registry::{
+    HKEY, HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
+};
 use windows::Win32::System::Threading::CreateMutexW;
-use windows::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
+use windows::Win32::UI::Controls::{
+    BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX,
+    InitCommonControlsEx, ODS_SELECTED,
+};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
-    CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBS_DROPDOWNLIST, CreatePopupMenu, CreateWindowExW,
-    DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos,
-    GetMessageW, GetSystemMetrics, HICON, IDC_ARROW, LoadCursorW, MB_ICONWARNING, MB_OK,
-    MF_STRING, MSG, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW,
-    RegisterWindowMessageW, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, SendMessageW, SetForegroundWindow,
-    ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_NULL,
-    WM_RBUTTONUP, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_OWNERDRAW, CB_ADDSTRING,
+    CB_GETCURSEL, CB_SETCURSEL, CBS_DROPDOWNLIST, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
+    DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetClientRect, GetCursorPos,
+    GetMessageW, GetSystemMetrics, HICON, HMENU, IDC_ARROW, LoadCursorW, MB_ICONWARNING, MB_OK,
+    MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG, MessageBoxW, PostMessageW, PostQuitMessage,
+    RegisterClassW, RegisterWindowMessageW, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, SendMessageW,
+    SetForegroundWindow, ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON,
+    TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLORBTN, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DRAWITEM, WM_NULL, WM_PAINT, WM_RBUTTONUP,
+    WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
-use windows::core::PCWSTR;
+use windows::core::{PCSTR, PCWSTR};
 
 use crate::icon::create_tray_icon;
 
 const WM_APP_TRAY: u32 = WM_APP + 1;
 const ID_TRAY_ICON: u32 = 1;
+const ID_MENU_HEADER: usize = 1000;
 const ID_MENU_SETTINGS: usize = 1001;
 const ID_MENU_EXIT: usize = 1002;
 
@@ -53,6 +68,10 @@ const ID_CHK_SHIFT: i32 = 2006;
 const ID_CHK_META: i32 = 2007;
 const ID_BTN_SAVE: i32 = 2008;
 const ID_BTN_CANCEL: i32 = 2009;
+const ID_LBL_SUBTITLE: i32 = 2010;
+const ID_LBL_SECTION_1: i32 = 2011;
+const ID_LBL_SECTION_2: i32 = 2012;
+const ID_LBL_TITLE: i32 = 2013;
 
 /// Attaches to the parent console (e.g., PowerShell) when `--metrics` is passed
 /// so diagnostics print even though the binary uses `windows_subsystem = "windows"`.
@@ -85,20 +104,110 @@ impl Drop for SingleInstanceGuard {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ThemePalette {
+    dark: bool,
+    window_bg: COLORREF,
+    card_bg: COLORREF,
+    card_border: COLORREF,
+    text_primary: COLORREF,
+    text_muted: COLORREF,
+    accent: COLORREF,
+    accent_pressed: COLORREF,
+    secondary_btn_bg: COLORREF,
+    secondary_btn_pressed: COLORREF,
+    secondary_btn_border: COLORREF,
+}
+
+impl ThemePalette {
+    fn for_system() -> Self {
+        if is_windows_dark_mode() {
+            Self {
+                dark: true,
+                window_bg: rgb(28, 28, 30),
+                card_bg: rgb(40, 40, 44),
+                card_border: rgb(62, 62, 68),
+                text_primary: rgb(243, 244, 246),
+                text_muted: rgb(156, 163, 175),
+                accent: rgb(59, 130, 246),
+                accent_pressed: rgb(37, 99, 235),
+                secondary_btn_bg: rgb(50, 50, 56),
+                secondary_btn_pressed: rgb(64, 64, 72),
+                secondary_btn_border: rgb(82, 82, 91),
+            }
+        } else {
+            Self {
+                dark: false,
+                window_bg: rgb(243, 244, 246),
+                card_bg: rgb(255, 255, 255),
+                card_border: rgb(226, 232, 240),
+                text_primary: rgb(15, 23, 42),
+                text_muted: rgb(100, 116, 139),
+                accent: rgb(37, 99, 235),
+                accent_pressed: rgb(29, 78, 216),
+                secondary_btn_bg: rgb(255, 255, 255),
+                secondary_btn_pressed: rgb(241, 245, 249),
+                secondary_btn_border: rgb(203, 213, 225),
+            }
+        }
+    }
+}
+
+const fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
+    COLORREF((r as u32) | ((g as u32) << 8) | ((b as u32) << 16))
+}
+
 type SaveCallback = Box<dyn FnMut(LayoutPair, HotkeySpec) -> Result<(), String>>;
 type ExitCallback = Box<dyn FnOnce()>;
 
 static TASKBAR_CREATED_MSG: AtomicU32 = AtomicU32::new(0);
+
+struct DialogResources {
+    palette: ThemePalette,
+    dpi: u32,
+    window_brush: HBRUSH,
+    card_brush: HBRUSH,
+    font_title: HFONT,
+    font_section: HFONT,
+    font_body: HFONT,
+    font_sub: HFONT,
+}
+
+impl DialogResources {
+    fn new(palette: ThemePalette, dpi: u32) -> Self {
+        Self {
+            palette,
+            dpi,
+            window_brush: unsafe { CreateSolidBrush(palette.window_bg) },
+            card_brush: unsafe { CreateSolidBrush(palette.card_bg) },
+            font_title: create_ui_font(scale(20, dpi), true),
+            font_section: create_ui_font(scale(13, dpi), true),
+            font_body: create_ui_font(scale(14, dpi), false),
+            font_sub: create_ui_font(scale(13, dpi), false),
+        }
+    }
+
+    fn destroy(self) {
+        unsafe {
+            let _ = DeleteObject(self.window_brush.into());
+            let _ = DeleteObject(self.card_brush.into());
+            let _ = DeleteObject(self.font_title.into());
+            let _ = DeleteObject(self.font_section.into());
+            let _ = DeleteObject(self.font_body.into());
+            let _ = DeleteObject(self.font_sub.into());
+        }
+    }
+}
 
 struct TrayState {
     hinstance: HINSTANCE,
     tray_hwnd: HWND,
     settings_hwnd: Option<HWND>,
     icon: HICON,
-    font: HFONT,
     snapshot: SettingsSnapshot,
     on_save: SaveCallback,
     on_exit: Option<ExitCallback>,
+    dialog_res: Option<DialogResources>,
     // Settings dialog child handles
     combo_primary: HWND,
     combo_secondary: HWND,
@@ -129,11 +238,13 @@ impl TrayHost for WinTrayHost {
         S: FnMut(LayoutPair, HotkeySpec) -> Result<(), String> + 'static,
         E: FnOnce() + 'static,
     {
+        init_common_controls();
+        enable_uxtheme_dark_menus();
+
         let hmodule =
             unsafe { GetModuleHandleW(None) }.map_err(|e| format!("GetModuleHandleW: {e}"))?;
         let hinstance: HINSTANCE = hmodule.into();
         let icon = create_tray_icon()?;
-        let font = create_ui_font();
 
         let tray_class = to_wide_null("LangFlipTrayHostClass");
         let settings_class = to_wide_null("LangFlipSettingsDialogClass");
@@ -155,7 +266,6 @@ impl TrayHost for WinTrayHost {
             lpszClassName: PCWSTR(settings_class.as_ptr()),
             hIcon: icon,
             hCursor: cursor,
-            hbrBackground: HBRUSH((COLOR_BTNFACE.0 + 1) as *mut std::ffi::c_void),
             ..Default::default()
         };
         unsafe { RegisterClassW(&wc_settings) };
@@ -190,10 +300,10 @@ impl TrayHost for WinTrayHost {
                 tray_hwnd,
                 settings_hwnd: None,
                 icon,
-                font,
                 snapshot: initial,
                 on_save: Box::new(on_save),
                 on_exit: Some(Box::new(on_exit)),
+                dialog_res: None,
                 combo_primary: HWND::default(),
                 combo_secondary: HWND::default(),
                 combo_key: HWND::default(),
@@ -215,17 +325,106 @@ impl TrayHost for WinTrayHost {
         remove_tray_icon(tray_hwnd);
         TRAY_STATE.with(|slot| {
             if let Some(mut state) = slot.borrow_mut().take() {
+                if let Some(res) = state.dialog_res.take() {
+                    res.destroy();
+                }
                 if let Some(exit_cb) = state.on_exit.take() {
                     exit_cb();
                 }
                 let _ = unsafe { DestroyIcon(state.icon) };
-                if !state.font.is_invalid() {
-                    let _ = unsafe { DeleteObject(state.font.into()) };
-                }
             }
         });
         Ok(())
     }
+}
+
+fn init_common_controls() {
+    let icc = INITCOMMONCONTROLSEX {
+        dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
+        dwICC: ICC_STANDARD_CLASSES,
+    };
+    let _ = unsafe { InitCommonControlsEx(&icc) };
+}
+
+/// Enables Windows 10/11 dark-mode support for native popup menus via undocumented
+/// `uxtheme.dll` ordinals 135 (`SetPreferredAppMode(AllowDark)`) and 136 (`FlushMenuThemes`).
+/// Fails silently on older Windows builds.
+fn enable_uxtheme_dark_menus() {
+    let dll = to_wide_null("uxtheme.dll");
+    let Ok(module) = (unsafe { LoadLibraryW(PCWSTR(dll.as_ptr())) }) else {
+        return;
+    };
+    unsafe {
+        if let Some(f) = GetProcAddress(module, PCSTR(135usize as *const u8)) {
+            let set_preferred: extern "system" fn(i32) -> i32 = std::mem::transmute(f);
+            let _ = set_preferred(1); // AllowDark
+        }
+        if let Some(f) = GetProcAddress(module, PCSTR(136usize as *const u8)) {
+            let flush: extern "system" fn() = std::mem::transmute(f);
+            flush();
+        }
+    }
+}
+
+fn is_windows_dark_mode() -> bool {
+    let subkey = to_wide_null("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+    let mut key = HKEY::default();
+    if unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(subkey.as_ptr()),
+            Some(0),
+            KEY_READ,
+            &mut key,
+        )
+    }
+    .is_err()
+    {
+        return false;
+    }
+
+    let val_name = to_wide_null("AppsUseLightTheme");
+    let mut reg_type = REG_DWORD;
+    let mut data = 1u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    let ok = unsafe {
+        RegQueryValueExW(
+            key,
+            PCWSTR(val_name.as_ptr()),
+            None,
+            Some(&mut reg_type),
+            Some((&mut data as *mut u32).cast()),
+            Some(&mut size),
+        )
+        .is_ok()
+    };
+    let _ = unsafe { RegCloseKey(key) };
+    ok && data == 0
+}
+
+fn apply_dwm_window_styling(hwnd: HWND, dark: bool) {
+    let dark_val: i32 = i32::from(dark);
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            (&dark_val as *const i32).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+    let corner = DWMWCP_ROUND;
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            (&corner as *const DWM_WINDOW_CORNER_PREFERENCE).cast(),
+            std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+        )
+    };
+}
+
+fn scale(px: i32, dpi: u32) -> i32 {
+    (((px as i64 * dpi as i64) + 48) / 96) as i32
 }
 
 fn add_tray_icon(hwnd: HWND, icon: HICON) -> Result<(), String> {
@@ -263,8 +462,18 @@ fn show_tray_menu(hwnd: HWND) {
     let Ok(menu) = (unsafe { CreatePopupMenu() }) else {
         return;
     };
+    let header_lbl = to_wide_null("LangFlip");
     let settings_lbl = to_wide_null("Settings...");
     let exit_lbl = to_wide_null("Exit");
+    let _ = unsafe {
+        AppendMenuW(
+            menu,
+            MF_STRING | MF_GRAYED,
+            ID_MENU_HEADER,
+            PCWSTR(header_lbl.as_ptr()),
+        )
+    };
+    let _ = unsafe { AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()) };
     let _ = unsafe {
         AppendMenuW(
             menu,
@@ -294,8 +503,6 @@ fn show_tray_menu(hwnd: HWND) {
 }
 
 fn open_or_focus_settings_dialog() {
-    // Extract everything needed WITHOUT holding a RefCell borrow across Win32 calls
-    // (CreateWindowExW / ShowWindow synchronously dispatch messages to WndProc).
     let setup = TRAY_STATE.with(|slot| {
         let borrow = slot.borrow();
         let state = borrow.as_ref()?;
@@ -303,12 +510,11 @@ fn open_or_focus_settings_dialog() {
             state.settings_hwnd,
             state.hinstance,
             state.tray_hwnd,
-            state.font,
             state.snapshot.clone(),
         ))
     });
 
-    let Some((existing_hwnd, hinst, tray_hwnd, font, snapshot)) = setup else {
+    let Some((existing_hwnd, hinst, tray_hwnd, snapshot)) = setup else {
         return;
     };
 
@@ -318,8 +524,10 @@ fn open_or_focus_settings_dialog() {
         return;
     }
 
-    let width = 410;
-    let height = 265;
+    let palette = ThemePalette::for_system();
+    let base_dpi = unsafe { GetDpiForWindow(tray_hwnd) }.max(96);
+    let width = scale(460, base_dpi);
+    let height = scale(390, base_dpi);
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
     let x = ((screen_w - width) / 2).max(40);
@@ -332,7 +540,7 @@ fn open_or_focus_settings_dialog() {
             WINDOW_EX_STYLE(0),
             PCWSTR(class_name.as_ptr()),
             PCWSTR(title.as_ptr()),
-            WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+            WS_CAPTION | WS_SYSMENU,
             x,
             y,
             width,
@@ -346,25 +554,208 @@ fn open_or_focus_settings_dialog() {
         return;
     };
 
-    create_label(dlg, hinst, font, "Primary language:", 20, 20, 125, 22);
-    let combo_primary = create_combobox(dlg, hinst, font, ID_COMBO_PRIMARY, 150, 17, 230, 180);
+    apply_dwm_window_styling(dlg, palette.dark);
+    let dpi = unsafe { GetDpiForWindow(dlg) }.max(96);
+    let res = DialogResources::new(palette, dpi);
+    let font_title = res.font_title;
+    let font_section = res.font_section;
+    let font_body = res.font_body;
+    let font_sub = res.font_sub;
+    let s = |px: i32| scale(px, dpi);
 
-    create_label(dlg, hinst, font, "Secondary language:", 20, 58, 125, 22);
-    let combo_secondary =
-        create_combobox(dlg, hinst, font, ID_COMBO_SECONDARY, 150, 55, 230, 180);
+    // Header
+    create_label(
+        dlg,
+        hinst,
+        font_title,
+        "LangFlip Settings",
+        Some(ID_LBL_TITLE),
+        s(24),
+        s(18),
+        s(380),
+        s(28),
+    );
+    create_label(
+        dlg,
+        hinst,
+        font_sub,
+        "Configure your keyboard language pair and trigger shortcut",
+        Some(ID_LBL_SUBTITLE),
+        s(24),
+        s(46),
+        s(400),
+        s(20),
+    );
 
-    create_label(dlg, hinst, font, "Trigger hotkey:", 20, 100, 125, 22);
-    let combo_key = create_combobox(dlg, hinst, font, ID_COMBO_KEY, 150, 97, 140, 200);
+    // Card 1: Keyboard Languages (card painted at x=20..424, y=78..186)
+    create_label(
+        dlg,
+        hinst,
+        font_section,
+        "KEYBOARD LANGUAGES",
+        Some(ID_LBL_SECTION_1),
+        s(36),
+        s(90),
+        s(240),
+        s(18),
+    );
+    create_label(
+        dlg,
+        hinst,
+        font_body,
+        "Primary",
+        None,
+        s(36),
+        s(118),
+        s(95),
+        s(22),
+    );
+    let combo_primary = create_combobox(
+        dlg,
+        hinst,
+        font_body,
+        ID_COMBO_PRIMARY,
+        s(140),
+        s(114),
+        s(268),
+        s(180),
+    );
 
-    create_label(dlg, hinst, font, "Modifiers:", 20, 138, 125, 22);
-    let chk_ctrl = create_checkbox(dlg, hinst, font, "Ctrl", ID_CHK_CTRL, 150, 136, 52, 22);
-    let chk_alt = create_checkbox(dlg, hinst, font, "Alt", ID_CHK_ALT, 206, 136, 48, 22);
-    let chk_shift = create_checkbox(dlg, hinst, font, "Shift", ID_CHK_SHIFT, 258, 136, 56, 22);
-    let chk_meta = create_checkbox(dlg, hinst, font, "Win", ID_CHK_META, 318, 136, 54, 22);
+    create_label(
+        dlg,
+        hinst,
+        font_body,
+        "Secondary",
+        None,
+        s(36),
+        s(154),
+        s(95),
+        s(22),
+    );
+    let combo_secondary = create_combobox(
+        dlg,
+        hinst,
+        font_body,
+        ID_COMBO_SECONDARY,
+        s(140),
+        s(150),
+        s(268),
+        s(180),
+    );
 
-    let _btn_save = create_button(dlg, hinst, font, "Save", ID_BTN_SAVE, 210, 182, 80, 28, true);
-    let _btn_cancel =
-        create_button(dlg, hinst, font, "Cancel", ID_BTN_CANCEL, 300, 182, 80, 28, false);
+    // Card 2: Trigger Hotkey (card painted at x=20..424, y=200..294)
+    create_label(
+        dlg,
+        hinst,
+        font_section,
+        "TRIGGER HOTKEY",
+        Some(ID_LBL_SECTION_2),
+        s(36),
+        s(212),
+        s(240),
+        s(18),
+    );
+    create_label(
+        dlg,
+        hinst,
+        font_body,
+        "Key",
+        None,
+        s(36),
+        s(238),
+        s(95),
+        s(22),
+    );
+    let combo_key = create_combobox(
+        dlg,
+        hinst,
+        font_body,
+        ID_COMBO_KEY,
+        s(140),
+        s(234),
+        s(150),
+        s(220),
+    );
+
+    create_label(
+        dlg,
+        hinst,
+        font_body,
+        "Modifiers",
+        None,
+        s(36),
+        s(270),
+        s(95),
+        s(22),
+    );
+    let chk_ctrl = create_checkbox(
+        dlg,
+        hinst,
+        font_body,
+        "Ctrl",
+        ID_CHK_CTRL,
+        s(140),
+        s(268),
+        s(56),
+        s(22),
+    );
+    let chk_alt = create_checkbox(
+        dlg,
+        hinst,
+        font_body,
+        "Alt",
+        ID_CHK_ALT,
+        s(202),
+        s(268),
+        s(52),
+        s(22),
+    );
+    let chk_shift = create_checkbox(
+        dlg,
+        hinst,
+        font_body,
+        "Shift",
+        ID_CHK_SHIFT,
+        s(260),
+        s(268),
+        s(62),
+        s(22),
+    );
+    let chk_meta = create_checkbox(
+        dlg,
+        hinst,
+        font_body,
+        "Win",
+        ID_CHK_META,
+        s(328),
+        s(268),
+        s(60),
+        s(22),
+    );
+
+    // Action buttons (owner-drawn modern rounded pills)
+    let _btn_save = create_ownerdraw_button(
+        dlg,
+        hinst,
+        font_body,
+        "Save",
+        ID_BTN_SAVE,
+        s(234),
+        s(308),
+        s(90),
+        s(32),
+    );
+    let _btn_cancel = create_ownerdraw_button(
+        dlg,
+        hinst,
+        font_body,
+        "Cancel",
+        ID_BTN_CANCEL,
+        s(334),
+        s(308),
+        s(90),
+        s(32),
+    );
 
     // Populate installed languages
     let mut primary_idx = 0usize;
@@ -405,6 +796,9 @@ fn open_or_focus_settings_dialog() {
 
     TRAY_STATE.with(|slot| {
         if let Some(state) = slot.borrow_mut().as_mut() {
+            if let Some(old) = state.dialog_res.replace(res) {
+                old.destroy();
+            }
             state.settings_hwnd = Some(dlg);
             state.combo_primary = combo_primary;
             state.combo_secondary = combo_secondary;
@@ -421,7 +815,6 @@ fn open_or_focus_settings_dialog() {
 }
 
 fn handle_settings_save(dlg: HWND) {
-    // Copy child handles before calling SendMessageW so RefCell is never borrowed during Win32 calls.
     let controls = TRAY_STATE.with(|slot| {
         let borrow = slot.borrow();
         let state = borrow.as_ref()?;
@@ -565,6 +958,88 @@ unsafe extern "system" fn settings_wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_PAINT => {
+            let paint_info = TRAY_STATE.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|s| s.dialog_res.as_ref())
+                    .map(|r| (r.palette, r.dpi, r.window_brush, r.card_brush))
+            });
+            if let Some((palette, dpi, win_brush, card_brush)) = paint_info {
+                let mut ps = PAINTSTRUCT::default();
+                let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
+                let mut rc = RECT::default();
+                let _ = unsafe { GetClientRect(hwnd, &mut rc) };
+                unsafe { FillRect(hdc, &rc, win_brush) };
+
+                let s = |px: i32| scale(px, dpi);
+                let radius = s(10);
+                let pen = unsafe { CreatePen(PS_SOLID, 1, palette.card_border) };
+                let old_pen = unsafe { SelectObject(hdc, pen.into()) };
+                let old_brush = unsafe { SelectObject(hdc, card_brush.into()) };
+
+                // Card 1: Keyboard Languages
+                let _ = unsafe { RoundRect(hdc, s(20), s(78), s(424), s(188), radius, radius) };
+                // Card 2: Trigger Hotkey
+                let _ = unsafe { RoundRect(hdc, s(20), s(200), s(424), s(296), radius, radius) };
+
+                unsafe {
+                    SelectObject(hdc, old_brush);
+                    SelectObject(hdc, old_pen);
+                    let _ = DeleteObject(pen.into());
+                    let _ = EndPaint(hwnd, &ps);
+                }
+                return LRESULT(0);
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
+            let hdc = HDC(wparam.0 as *mut std::ffi::c_void);
+            let ctrl = HWND(lparam.0 as *mut std::ffi::c_void);
+            let ctrl_id = unsafe { windows::Win32::UI::WindowsAndMessaging::GetDlgCtrlID(ctrl) };
+            let colors = TRAY_STATE.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|s| s.dialog_res.as_ref())
+                    .map(|r| (r.palette, r.window_brush, r.card_brush))
+            });
+            if let Some((palette, win_brush, card_brush)) = colors {
+                let is_header = ctrl_id == ID_LBL_TITLE || ctrl_id == ID_LBL_SUBTITLE;
+                let is_muted = ctrl_id == ID_LBL_SUBTITLE
+                    || ctrl_id == ID_LBL_SECTION_1
+                    || ctrl_id == ID_LBL_SECTION_2;
+                let text_col = if is_muted {
+                    palette.text_muted
+                } else {
+                    palette.text_primary
+                };
+                let (bg_col, brush) = if is_header {
+                    (palette.window_bg, win_brush)
+                } else {
+                    (palette.card_bg, card_brush)
+                };
+                unsafe {
+                    SetTextColor(hdc, text_col);
+                    SetBkColor(hdc, bg_col);
+                }
+                return LRESULT(brush.0 as isize);
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_DRAWITEM => {
+            let dis = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+            let info = TRAY_STATE.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|s| s.dialog_res.as_ref())
+                    .map(|r| (r.palette, r.dpi, r.font_body, r.window_brush))
+            });
+            if let Some((palette, dpi, font, win_brush)) = info {
+                draw_modern_button(dis, palette, dpi, font, win_brush);
+                return LRESULT(1);
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
         WM_COMMAND => {
             let id = (wparam.0 & 0xFFFF) as i32;
             if id == ID_BTN_SAVE {
@@ -584,6 +1059,9 @@ unsafe extern "system" fn settings_wnd_proc(
             TRAY_STATE.with(|slot| {
                 if let Some(state) = slot.borrow_mut().as_mut() {
                     state.settings_hwnd = None;
+                    if let Some(res) = state.dialog_res.take() {
+                        res.destroy();
+                    }
                 }
             });
             LRESULT(0)
@@ -592,15 +1070,74 @@ unsafe extern "system" fn settings_wnd_proc(
     }
 }
 
-fn create_ui_font() -> HFONT {
+fn draw_modern_button(
+    dis: &DRAWITEMSTRUCT,
+    palette: ThemePalette,
+    dpi: u32,
+    font: HFONT,
+    win_brush: HBRUSH,
+) {
+    let hdc = dis.hDC;
+    let rc = dis.rcItem;
+    let is_save = dis.CtlID as i32 == ID_BTN_SAVE;
+    let pressed = (dis.itemState.0 & ODS_SELECTED.0) != 0;
+
+    let (fill_col, border_col, text_col, label) = if is_save {
+        let bg = if pressed {
+            palette.accent_pressed
+        } else {
+            palette.accent
+        };
+        (bg, bg, rgb(255, 255, 255), "Save")
+    } else {
+        let bg = if pressed {
+            palette.secondary_btn_pressed
+        } else {
+            palette.secondary_btn_bg
+        };
+        (bg, palette.secondary_btn_border, palette.text_primary, "Cancel")
+    };
+
+    unsafe {
+        FillRect(hdc, &rc, win_brush);
+        let brush = CreateSolidBrush(fill_col);
+        let pen = CreatePen(PS_SOLID, 1, border_col);
+        let old_b = SelectObject(hdc, brush.into());
+        let old_p = SelectObject(hdc, pen.into());
+        let old_f = SelectObject(hdc, font.into());
+
+        let r = scale(7, dpi);
+        let _ = RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, r, r);
+
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, text_col);
+        let mut text_wide = to_wide_null(label);
+        let mut text_rc = rc;
+        let _ = DrawTextW(
+            hdc,
+            &mut text_wide[..label.encode_utf16().count()],
+            &mut text_rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+
+        SelectObject(hdc, old_f);
+        SelectObject(hdc, old_p);
+        SelectObject(hdc, old_b);
+        let _ = DeleteObject(pen.into());
+        let _ = DeleteObject(brush.into());
+    }
+}
+
+fn create_ui_font(px_height: i32, semibold: bool) -> HFONT {
     let face = to_wide_null("Segoe UI");
+    let weight = if semibold { FW_SEMIBOLD.0 } else { FW_NORMAL.0 } as i32;
     unsafe {
         CreateFontW(
-            -15,
+            -px_height,
             0,
             0,
             0,
-            FW_NORMAL.0 as i32,
+            weight,
             0,
             0,
             0,
@@ -626,6 +1163,7 @@ fn create_label(
     hinst: HINSTANCE,
     font: HFONT,
     text: &str,
+    id: Option<i32>,
     x: i32,
     y: i32,
     w: i32,
@@ -633,6 +1171,7 @@ fn create_label(
 ) -> HWND {
     let cls = to_wide_null("STATIC");
     let txt = to_wide_null(text);
+    let menu = id.map(|v| HMENU(v as isize as *mut std::ffi::c_void));
     let hwnd = unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
@@ -644,7 +1183,7 @@ fn create_label(
             w,
             h,
             Some(parent),
-            None,
+            menu,
             Some(hinst),
             None,
         )
@@ -677,9 +1216,7 @@ fn create_combobox(
             w,
             h,
             Some(parent),
-            Some(windows::Win32::UI::WindowsAndMessaging::HMENU(
-                id as isize as *mut std::ffi::c_void,
-            )),
+            Some(HMENU(id as isize as *mut std::ffi::c_void)),
             Some(hinst),
             None,
         )
@@ -714,9 +1251,7 @@ fn create_checkbox(
             w,
             h,
             Some(parent),
-            Some(windows::Win32::UI::WindowsAndMessaging::HMENU(
-                id as isize as *mut std::ffi::c_void,
-            )),
+            Some(HMENU(id as isize as *mut std::ffi::c_void)),
             Some(hinst),
             None,
         )
@@ -727,7 +1262,7 @@ fn create_checkbox(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn create_button(
+fn create_ownerdraw_button(
     parent: HWND,
     hinst: HINSTANCE,
     font: HFONT,
@@ -737,29 +1272,21 @@ fn create_button(
     y: i32,
     w: i32,
     h: i32,
-    default: bool,
 ) -> HWND {
     let cls = to_wide_null("BUTTON");
     let txt = to_wide_null(text);
-    let style_bits = if default {
-        BS_DEFPUSHBUTTON as u32
-    } else {
-        BS_PUSHBUTTON as u32
-    };
     let hwnd = unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
             PCWSTR(cls.as_ptr()),
             PCWSTR(txt.as_ptr()),
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(style_bits),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_OWNERDRAW as u32),
             x,
             y,
             w,
             h,
             Some(parent),
-            Some(windows::Win32::UI::WindowsAndMessaging::HMENU(
-                id as isize as *mut std::ffi::c_void,
-            )),
+            Some(HMENU(id as isize as *mut std::ffi::c_void)),
             Some(hinst),
             None,
         )
