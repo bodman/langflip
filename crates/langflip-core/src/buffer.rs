@@ -95,6 +95,26 @@ impl KeystrokeBuffer {
         self.burst_layout = Some(layout);
     }
 
+    /// Replaces the entire buffer contents (used after a successful empty-buffer
+    /// fallback conversion so a second hotkey press cleanly round-trips).
+    pub fn replace_all(
+        &mut self,
+        strokes: Vec<BufferedKeystroke>,
+        layout: LayoutId,
+        focus: FocusId,
+    ) {
+        self.entries.clear();
+        let skip = strokes.len().saturating_sub(self.max_len);
+        self.entries.extend(strokes.into_iter().skip(skip));
+        if self.entries.is_empty() {
+            self.burst_layout = None;
+            self.burst_focus = None;
+        } else {
+            self.burst_layout = Some(layout);
+            self.burst_focus = Some(focus);
+        }
+    }
+
     pub fn snapshot(&self) -> Vec<BufferedKeystroke> {
         self.entries.iter().copied().collect()
     }

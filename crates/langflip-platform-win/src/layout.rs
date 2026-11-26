@@ -10,6 +10,7 @@ use std::os::windows::ffi::OsStringExt;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use langflip_core::key::{BufferedKeystroke, PhysicalKey};
 use langflip_core::layout::{InstalledLayout, LayoutId};
 use langflip_core::ports::{LayoutController, LayoutSwitchOutcome};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
@@ -21,7 +22,8 @@ use windows::Win32::System::Registry::{
     RegQueryValueExW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyboardLayout, GetKeyboardLayoutList, HKL,
+    GetKeyboardLayout, GetKeyboardLayoutList, HKL, MAPVK_VK_TO_VSC_EX, MapVirtualKeyExW,
+    VkKeyScanExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_INPUTLANGCHANGEREQUEST};
 use windows::core::{PCWSTR, PWSTR};
@@ -176,6 +178,44 @@ impl LayoutController for WinLayoutController {
 
     fn list_installed_layouts(&self) -> Result<Vec<InstalledLayout>, Self::Error> {
         Ok(self.installed.clone())
+    }
+
+    fn text_to_keystrokes(&self, text: &str, layout: &LayoutId) -> Option<Vec<BufferedKeystroke>> {
+        let &raw_hkl = self.id_to_hkl.get(layout)?;
+        let hkl = HKL(raw_hkl as *mut std::ffi::c_void);
+        let mut strokes = Vec::with_capacity(text.chars().count());
+        let mut utf16 = [0u16; 2];
+
+        for ch in text.chars() {
+            let encoded = ch.encode_utf16(&mut utf16);
+            if encoded.len() != 1 {
+                return None;
+            }
+            let res = unsafe { VkKeyScanExW(encoded[0], hkl) };
+            if res == -1 {
+                return None;
+            }
+            let vk = (res & 0xFF) as u32;
+            let shift_state = ((res >> 8) & 0xFF) as u8;
+            // Reject characters requiring Ctrl/Alt/AltGr so we never inject unintended shortcuts.
+            if (shift_state & !0x01) != 0 {
+                return None;
+            }
+            let shift = (shift_state & 0x01) != 0;
+            let vsc = unsafe { MapVirtualKeyExW(vk, MAPVK_VK_TO_VSC_EX, Some(hkl)) };
+            let scan_code = (vsc & 0xFF) as u16;
+            if scan_code == 0 {
+                return None;
+            }
+            let prefix = (vsc >> 8) & 0xFF;
+            let extended = prefix == 0xE0 || prefix == 0xE1;
+            strokes.push(BufferedKeystroke {
+                key: PhysicalKey::new(scan_code, extended),
+                shift,
+            });
+        }
+
+        Some(strokes)
     }
 }
 

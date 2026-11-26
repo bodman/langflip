@@ -221,8 +221,14 @@ impl ConversionEngine {
             }
         };
 
-        // Empty buffer -> optionally toggle layout only (FR-007).
+        // Empty buffer -> try safe current-line/single-line fallback first (Spec 005),
+        // otherwise fall back to toggling layout only (FR-007).
         if self.policy.buffer().is_empty() {
+            if let Some(outcome) =
+                self.try_empty_buffer_fallback(ev, &current_layout, injector, layouts, focus)
+            {
+                return outcome;
+            }
             if !self.config.toggle_on_empty_buffer {
                 return EngineOutcome::Ignored;
             }
@@ -306,5 +312,91 @@ impl ConversionEngine {
             replayed: count,
             new_layout: confirmed_layout,
         }
+    }
+
+    fn try_empty_buffer_fallback<I, L, F>(
+        &mut self,
+        ev: &KeyEvent,
+        current_layout: &LayoutId,
+        injector: &mut I,
+        layouts: &mut L,
+        focus: &F,
+    ) -> Option<EngineOutcome>
+    where
+        I: InputInjector,
+        L: LayoutController,
+        F: FocusObserver,
+    {
+        let target_layout = self
+            .config
+            .layouts
+            .opposite_if_member(current_layout)?
+            .clone();
+
+        let fb = focus.read_line_before_caret(self.config.max_buffer_len)?;
+        if fb.text.trim().is_empty() {
+            return None;
+        }
+
+        // Prefer mapping under active layout (standard case: mistyped in active layout);
+        // if unmappable there, check opposite layout (already-toggled case).
+        let (strokes, switch_to) =
+            if let Some(s) = layouts.text_to_keystrokes(&fb.text, current_layout) {
+                (s, Some(target_layout))
+            } else {
+                let s = layouts.text_to_keystrokes(&fb.text, &target_layout)?;
+                (s, None)
+            };
+
+        if strokes.is_empty() {
+            return None;
+        }
+
+        if !self.is_fresh(ev.focus_id, ev.seq, focus) {
+            return Some(EngineOutcome::AbortedStale);
+        }
+
+        let final_layout = if let Some(target) = switch_to {
+            let confirmed = match layouts.switch_and_confirm(&target, self.confirm_timeout_ms) {
+                Ok(LayoutSwitchOutcome::Confirmed(new_id)) => new_id,
+                Ok(LayoutSwitchOutcome::RejectedOrTimedOut) => {
+                    return Some(EngineOutcome::AbortedSwitchRejected);
+                }
+                Err(e) => return Some(EngineOutcome::LayoutError(e.to_string())),
+            };
+            if !self.is_fresh(ev.focus_id, ev.seq, focus) {
+                let _ = layouts.switch_and_confirm(current_layout, self.confirm_timeout_ms);
+                return Some(EngineOutcome::AbortedStale);
+            }
+            confirmed
+        } else {
+            current_layout.clone()
+        };
+
+        let erase_count = if fb.replaces_selection {
+            1
+        } else {
+            fb.text.chars().count()
+        };
+        let replayed = strokes.len();
+        let steps = plan_injection(
+            ev.modifiers,
+            erase_count,
+            &strokes,
+            self.config.replay_delay_ms,
+        );
+        if let Err(err) = injector.execute_steps(&steps) {
+            return Some(EngineOutcome::FailedInjection(err));
+        }
+
+        self.policy
+            .buffer_mut()
+            .replace_all(strokes, final_layout.clone(), ev.focus_id);
+
+        Some(EngineOutcome::Converted {
+            erased: erase_count,
+            replayed,
+            new_layout: final_layout,
+        })
     }
 }
