@@ -343,16 +343,26 @@ impl ConversionEngine {
         let (strokes, switch_to) =
             if let Some(s) = layouts.text_to_keystrokes(&fb.text, current_layout) {
                 (s, Some(target_layout))
-            } else {
-                let s = layouts.text_to_keystrokes(&fb.text, &target_layout)?;
+            } else if let Some(s) = layouts.text_to_keystrokes(&fb.text, &target_layout) {
                 (s, None)
+            } else {
+                if fb.replaces_selection {
+                    focus.clear_fallback_selection();
+                }
+                return None;
             };
 
         if strokes.is_empty() {
+            if fb.replaces_selection {
+                focus.clear_fallback_selection();
+            }
             return None;
         }
 
         if !self.is_fresh(ev.focus_id, ev.seq, focus) {
+            if fb.replaces_selection {
+                focus.clear_fallback_selection();
+            }
             return Some(EngineOutcome::AbortedStale);
         }
 
@@ -360,12 +370,23 @@ impl ConversionEngine {
             let confirmed = match layouts.switch_and_confirm(&target, self.confirm_timeout_ms) {
                 Ok(LayoutSwitchOutcome::Confirmed(new_id)) => new_id,
                 Ok(LayoutSwitchOutcome::RejectedOrTimedOut) => {
+                    if fb.replaces_selection {
+                        focus.clear_fallback_selection();
+                    }
                     return Some(EngineOutcome::AbortedSwitchRejected);
                 }
-                Err(e) => return Some(EngineOutcome::LayoutError(e.to_string())),
+                Err(e) => {
+                    if fb.replaces_selection {
+                        focus.clear_fallback_selection();
+                    }
+                    return Some(EngineOutcome::LayoutError(e.to_string()));
+                }
             };
             if !self.is_fresh(ev.focus_id, ev.seq, focus) {
                 let _ = layouts.switch_and_confirm(current_layout, self.confirm_timeout_ms);
+                if fb.replaces_selection {
+                    focus.clear_fallback_selection();
+                }
                 return Some(EngineOutcome::AbortedStale);
             }
             confirmed

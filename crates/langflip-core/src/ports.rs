@@ -70,6 +70,9 @@ pub trait FocusObserver {
     fn read_line_before_caret(&self, _max_len: usize) -> Option<FallbackText> {
         None
     }
+
+    /// Collapses a synthetic fallback selection if conversion is aborted before erasure.
+    fn clear_fallback_selection(&self) {}
 }
 
 /// Low-level injection step planned by `langflip-core::planner::plan_injection`.
