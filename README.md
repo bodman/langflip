@@ -6,6 +6,31 @@
 
 ---
 
+## Download & Quick Start (Windows 11)
+
+- **Direct Download**: **[Download `langflip.exe` (Windows 11, x64)](https://github.com/bodman/langflip/releases/latest/download/langflip.exe)** (~2.8 MB, standalone binary, zero runtime dependencies)
+- **All Releases**: [GitHub Releases](https://github.com/bodman/langflip/releases/latest)
+
+1. Download `langflip.exe` and double-click it (if Windows SmartScreen prompts for an unsigned open-source executable, click **More info → Run anyway**).
+2. LangFlip starts silently in your **Windows 11 system tray** (no console window).
+3. Start typing anywhere (Notepad, Edge/Chrome, Windows Terminal, PowerShell, CMD) — if you realize you're in the wrong language, hit **`Pause/Break`** to flip the text and switch layouts in-place.
+
+---
+
+## System Tray Icon & Menu
+
+When running, LangFlip sits quietly in the Windows 11 taskbar notification area with a **blue rounded swap-arrow icon (`⇄`)** *(if Windows hides new icons by default, click the `^` arrow in the bottom-right taskbar and drag the LangFlip icon onto the taskbar to pin it)*.
+
+- **Right-click the tray icon** to open the menu:
+  - **Settings...** — opens the native Settings dialog where you can select:
+    - **Primary language** and **Secondary language** (automatically populated from the keyboard layouts installed on your Windows 11 system).
+    - **Trigger hotkey** (`Pause`, `ScrollLock`, `Space`, `F1`–`F12`, `A`–`Z`) and optional **`Ctrl` / `Alt` / `Shift` / `Win`** modifiers.
+    - Clicking **Save** writes your choices to `langflip.toml` and applies them **immediately** with no restart required; **Cancel** discards changes.
+  - **Exit** — removes the tray icon, cleanly unhooks all OS input listeners, and exits immediately.
+- **Single-instance & Explorer recovery**: Launching `langflip.exe` a second time exits cleanly without creating duplicate tray icons or hooks, and if Windows Explorer restarts, LangFlip automatically re-registers its tray icon.
+
+---
+
 ## The Problem
 
 If you regularly type in two keyboard languages on Windows 11 (for example, **English** and **Hebrew**, or English and Russian/Ukrainian/Greek), you know this daily frustration:
