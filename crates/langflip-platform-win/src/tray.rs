@@ -2,6 +2,7 @@
 //! single-instance mutex guard, and Settings dialog (`T010`).
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use langflip_core::hotkey::HotkeySpec;
 use langflip_core::key::{SUPPORTED_HOTKEY_NAMES, key_name_for, parse_key_name};
@@ -87,13 +88,14 @@ impl Drop for SingleInstanceGuard {
 type SaveCallback = Box<dyn FnMut(LayoutPair, HotkeySpec) -> Result<(), String>>;
 type ExitCallback = Box<dyn FnOnce()>;
 
+static TASKBAR_CREATED_MSG: AtomicU32 = AtomicU32::new(0);
+
 struct TrayState {
     hinstance: HINSTANCE,
     tray_hwnd: HWND,
     settings_hwnd: Option<HWND>,
     icon: HICON,
     font: HFONT,
-    taskbar_created_msg: u32,
     snapshot: SettingsSnapshot,
     on_save: SaveCallback,
     on_exit: Option<ExitCallback>,
@@ -178,7 +180,9 @@ impl TrayHost for WinTrayHost {
         .map_err(|e| format!("CreateWindowExW(tray) failed: {e}"))?;
 
         let taskbar_msg_name = to_wide_null("TaskbarCreated");
-        let taskbar_created_msg = unsafe { RegisterWindowMessageW(PCWSTR(taskbar_msg_name.as_ptr())) };
+        let taskbar_created_msg =
+            unsafe { RegisterWindowMessageW(PCWSTR(taskbar_msg_name.as_ptr())) };
+        TASKBAR_CREATED_MSG.store(taskbar_created_msg, Ordering::Relaxed);
 
         TRAY_STATE.with(|slot| {
             *slot.borrow_mut() = Some(TrayState {
@@ -187,7 +191,6 @@ impl TrayHost for WinTrayHost {
                 settings_hwnd: None,
                 icon,
                 font,
-                taskbar_created_msg,
                 snapshot: initial,
                 on_save: Box::new(on_save),
                 on_exit: Some(Box::new(on_exit)),
@@ -291,126 +294,167 @@ fn show_tray_menu(hwnd: HWND) {
 }
 
 fn open_or_focus_settings_dialog() {
-    TRAY_STATE.with(|slot| {
-        let mut borrow = slot.borrow_mut();
-        let Some(state) = borrow.as_mut() else {
-            return;
-        };
-
-        if let Some(existing) = state.settings_hwnd {
-            let _ = unsafe { ShowWindow(existing, SW_SHOW) };
-            let _ = unsafe { SetForegroundWindow(existing) };
-            return;
-        }
-
-        let width = 410;
-        let height = 265;
-        let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-        let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-        let x = ((screen_w - width) / 2).max(40);
-        let y = ((screen_h - height) / 2).max(40);
-
-        let class_name = to_wide_null("LangFlipSettingsDialogClass");
-        let title = to_wide_null("LangFlip Settings");
-        let Ok(dlg) = (unsafe {
-            CreateWindowExW(
-                WINDOW_EX_STYLE(0),
-                PCWSTR(class_name.as_ptr()),
-                PCWSTR(title.as_ptr()),
-                WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-                x,
-                y,
-                width,
-                height,
-                Some(state.tray_hwnd),
-                None,
-                Some(state.hinstance),
-                None,
-            )
-        }) else {
-            return;
-        };
-
-        let hinst = state.hinstance;
-        let font = state.font;
-
-        create_label(dlg, hinst, font, "Primary language:", 20, 20, 125, 22);
-        let combo_primary = create_combobox(dlg, hinst, font, ID_COMBO_PRIMARY, 150, 17, 230, 180);
-
-        create_label(dlg, hinst, font, "Secondary language:", 20, 58, 125, 22);
-        let combo_secondary =
-            create_combobox(dlg, hinst, font, ID_COMBO_SECONDARY, 150, 55, 230, 180);
-
-        create_label(dlg, hinst, font, "Trigger hotkey:", 20, 100, 125, 22);
-        let combo_key = create_combobox(dlg, hinst, font, ID_COMBO_KEY, 150, 97, 140, 200);
-
-        create_label(dlg, hinst, font, "Modifiers:", 20, 138, 125, 22);
-        let chk_ctrl = create_checkbox(dlg, hinst, font, "Ctrl", ID_CHK_CTRL, 150, 136, 52, 22);
-        let chk_alt = create_checkbox(dlg, hinst, font, "Alt", ID_CHK_ALT, 206, 136, 48, 22);
-        let chk_shift = create_checkbox(dlg, hinst, font, "Shift", ID_CHK_SHIFT, 258, 136, 56, 22);
-        let chk_meta = create_checkbox(dlg, hinst, font, "Win", ID_CHK_META, 318, 136, 54, 22);
-
-        let _btn_save = create_button(dlg, hinst, font, "Save", ID_BTN_SAVE, 210, 182, 80, 28, true);
-        let _btn_cancel =
-            create_button(dlg, hinst, font, "Cancel", ID_BTN_CANCEL, 300, 182, 80, 28, false);
-
-        // Populate installed languages
-        let mut primary_idx = 0usize;
-        let mut secondary_idx = usize::from(state.snapshot.installed_layouts.len() > 1);
-        for (i, layout) in state.snapshot.installed_layouts.iter().enumerate() {
-            let label = format!("{} ({})", layout.display_name, layout.id.as_str().to_ascii_uppercase());
-            combo_add_string(combo_primary, &label);
-            combo_add_string(combo_secondary, &label);
-            if layout.id == state.snapshot.layouts.primary {
-                primary_idx = i;
-            }
-            if layout.id == state.snapshot.layouts.secondary {
-                secondary_idx = i;
-            }
-        }
-        combo_set_cursel(combo_primary, primary_idx);
-        combo_set_cursel(combo_secondary, secondary_idx);
-
-        // Populate hotkey dropdown
-        let current_key_name = key_name_for(state.snapshot.hotkey.key).unwrap_or("Pause");
-        let mut key_idx = 0usize;
-        for (i, &name) in SUPPORTED_HOTKEY_NAMES.iter().enumerate() {
-            combo_add_string(combo_key, name);
-            if name.eq_ignore_ascii_case(current_key_name) {
-                key_idx = i;
-            }
-        }
-        combo_set_cursel(combo_key, key_idx);
-
-        set_checked(chk_ctrl, state.snapshot.hotkey.ctrl);
-        set_checked(chk_alt, state.snapshot.hotkey.alt);
-        set_checked(chk_shift, state.snapshot.hotkey.shift);
-        set_checked(chk_meta, state.snapshot.hotkey.meta);
-
-        state.settings_hwnd = Some(dlg);
-        state.combo_primary = combo_primary;
-        state.combo_secondary = combo_secondary;
-        state.combo_key = combo_key;
-        state.chk_ctrl = chk_ctrl;
-        state.chk_alt = chk_alt;
-        state.chk_shift = chk_shift;
-        state.chk_meta = chk_meta;
-
-        let _ = unsafe { ShowWindow(dlg, SW_SHOW) };
-        let _ = unsafe { SetForegroundWindow(dlg) };
+    // Extract everything needed WITHOUT holding a RefCell borrow across Win32 calls
+    // (CreateWindowExW / ShowWindow synchronously dispatch messages to WndProc).
+    let setup = TRAY_STATE.with(|slot| {
+        let borrow = slot.borrow();
+        let state = borrow.as_ref()?;
+        Some((
+            state.settings_hwnd,
+            state.hinstance,
+            state.tray_hwnd,
+            state.font,
+            state.snapshot.clone(),
+        ))
     });
+
+    let Some((existing_hwnd, hinst, tray_hwnd, font, snapshot)) = setup else {
+        return;
+    };
+
+    if let Some(existing) = existing_hwnd {
+        let _ = unsafe { ShowWindow(existing, SW_SHOW) };
+        let _ = unsafe { SetForegroundWindow(existing) };
+        return;
+    }
+
+    let width = 410;
+    let height = 265;
+    let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+    let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+    let x = ((screen_w - width) / 2).max(40);
+    let y = ((screen_h - height) / 2).max(40);
+
+    let class_name = to_wide_null("LangFlipSettingsDialogClass");
+    let title = to_wide_null("LangFlip Settings");
+    let Ok(dlg) = (unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            PCWSTR(class_name.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+            x,
+            y,
+            width,
+            height,
+            Some(tray_hwnd),
+            None,
+            Some(hinst),
+            None,
+        )
+    }) else {
+        return;
+    };
+
+    create_label(dlg, hinst, font, "Primary language:", 20, 20, 125, 22);
+    let combo_primary = create_combobox(dlg, hinst, font, ID_COMBO_PRIMARY, 150, 17, 230, 180);
+
+    create_label(dlg, hinst, font, "Secondary language:", 20, 58, 125, 22);
+    let combo_secondary =
+        create_combobox(dlg, hinst, font, ID_COMBO_SECONDARY, 150, 55, 230, 180);
+
+    create_label(dlg, hinst, font, "Trigger hotkey:", 20, 100, 125, 22);
+    let combo_key = create_combobox(dlg, hinst, font, ID_COMBO_KEY, 150, 97, 140, 200);
+
+    create_label(dlg, hinst, font, "Modifiers:", 20, 138, 125, 22);
+    let chk_ctrl = create_checkbox(dlg, hinst, font, "Ctrl", ID_CHK_CTRL, 150, 136, 52, 22);
+    let chk_alt = create_checkbox(dlg, hinst, font, "Alt", ID_CHK_ALT, 206, 136, 48, 22);
+    let chk_shift = create_checkbox(dlg, hinst, font, "Shift", ID_CHK_SHIFT, 258, 136, 56, 22);
+    let chk_meta = create_checkbox(dlg, hinst, font, "Win", ID_CHK_META, 318, 136, 54, 22);
+
+    let _btn_save = create_button(dlg, hinst, font, "Save", ID_BTN_SAVE, 210, 182, 80, 28, true);
+    let _btn_cancel =
+        create_button(dlg, hinst, font, "Cancel", ID_BTN_CANCEL, 300, 182, 80, 28, false);
+
+    // Populate installed languages
+    let mut primary_idx = 0usize;
+    let mut secondary_idx = usize::from(snapshot.installed_layouts.len() > 1);
+    for (i, layout) in snapshot.installed_layouts.iter().enumerate() {
+        let label = format!(
+            "{} ({})",
+            layout.display_name,
+            layout.id.as_str().to_ascii_uppercase()
+        );
+        combo_add_string(combo_primary, &label);
+        combo_add_string(combo_secondary, &label);
+        if layout.id == snapshot.layouts.primary {
+            primary_idx = i;
+        }
+        if layout.id == snapshot.layouts.secondary {
+            secondary_idx = i;
+        }
+    }
+    combo_set_cursel(combo_primary, primary_idx);
+    combo_set_cursel(combo_secondary, secondary_idx);
+
+    // Populate hotkey dropdown
+    let current_key_name = key_name_for(snapshot.hotkey.key).unwrap_or("Pause");
+    let mut key_idx = 0usize;
+    for (i, &name) in SUPPORTED_HOTKEY_NAMES.iter().enumerate() {
+        combo_add_string(combo_key, name);
+        if name.eq_ignore_ascii_case(current_key_name) {
+            key_idx = i;
+        }
+    }
+    combo_set_cursel(combo_key, key_idx);
+
+    set_checked(chk_ctrl, snapshot.hotkey.ctrl);
+    set_checked(chk_alt, snapshot.hotkey.alt);
+    set_checked(chk_shift, snapshot.hotkey.shift);
+    set_checked(chk_meta, snapshot.hotkey.meta);
+
+    TRAY_STATE.with(|slot| {
+        if let Some(state) = slot.borrow_mut().as_mut() {
+            state.settings_hwnd = Some(dlg);
+            state.combo_primary = combo_primary;
+            state.combo_secondary = combo_secondary;
+            state.combo_key = combo_key;
+            state.chk_ctrl = chk_ctrl;
+            state.chk_alt = chk_alt;
+            state.chk_shift = chk_shift;
+            state.chk_meta = chk_meta;
+        }
+    });
+
+    let _ = unsafe { ShowWindow(dlg, SW_SHOW) };
+    let _ = unsafe { SetForegroundWindow(dlg) };
 }
 
 fn handle_settings_save(dlg: HWND) {
+    // Copy child handles before calling SendMessageW so RefCell is never borrowed during Win32 calls.
+    let controls = TRAY_STATE.with(|slot| {
+        let borrow = slot.borrow();
+        let state = borrow.as_ref()?;
+        Some((
+            state.combo_primary,
+            state.combo_secondary,
+            state.combo_key,
+            state.chk_ctrl,
+            state.chk_alt,
+            state.chk_shift,
+            state.chk_meta,
+        ))
+    });
+
+    let Some((combo_primary, combo_secondary, combo_key, chk_ctrl, chk_alt, chk_shift, chk_meta)) =
+        controls
+    else {
+        return;
+    };
+
+    let p_idx = combo_get_cursel(combo_primary);
+    let s_idx = combo_get_cursel(combo_secondary);
+    let k_idx = combo_get_cursel(combo_key);
+    let ctrl = is_checked(chk_ctrl);
+    let alt = is_checked(chk_alt);
+    let shift = is_checked(chk_shift);
+    let meta = is_checked(chk_meta);
+
     let result: Result<(), String> = TRAY_STATE.with(|slot| {
         let mut borrow = slot.borrow_mut();
         let Some(state) = borrow.as_mut() else {
             return Err("internal tray state missing".into());
         };
-
-        let p_idx = combo_get_cursel(state.combo_primary);
-        let s_idx = combo_get_cursel(state.combo_secondary);
-        let k_idx = combo_get_cursel(state.combo_key);
 
         let primary = state
             .snapshot
@@ -440,10 +484,10 @@ fn handle_settings_save(dlg: HWND) {
 
         let new_hotkey = HotkeySpec {
             key,
-            ctrl: is_checked(state.chk_ctrl),
-            alt: is_checked(state.chk_alt),
-            shift: is_checked(state.chk_shift),
-            meta: is_checked(state.chk_meta),
+            ctrl,
+            alt,
+            shift,
+            meta,
         };
         let new_pair = LayoutPair { primary, secondary };
 
@@ -478,19 +522,12 @@ unsafe extern "system" fn tray_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let taskbar_msg = TRAY_STATE.with(|s| {
-        s.borrow()
-            .as_ref()
-            .map(|st| st.taskbar_created_msg)
-            .unwrap_or(0)
-    });
-
+    let taskbar_msg = TASKBAR_CREATED_MSG.load(Ordering::Relaxed);
     if taskbar_msg != 0 && msg == taskbar_msg {
-        TRAY_STATE.with(|s| {
-            if let Some(st) = s.borrow().as_ref() {
-                let _ = add_tray_icon(st.tray_hwnd, st.icon);
-            }
-        });
+        let icon_opt = TRAY_STATE.with(|s| s.borrow().as_ref().map(|st| (st.tray_hwnd, st.icon)));
+        if let Some((tray_hwnd, icon)) = icon_opt {
+            let _ = add_tray_icon(tray_hwnd, icon);
+        }
         return LRESULT(0);
     }
 
