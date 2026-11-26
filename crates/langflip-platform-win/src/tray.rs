@@ -1,5 +1,5 @@
-//! Modern Windows 11 system tray icon, Fluent-themed right-click context menu
-//! (Settings / Exit), single-instance mutex guard, and styled Settings dialog.
+//! Option 3 — Nord Calm Windows 11 system tray icon, Fluent-themed right-click
+//! context menu (Settings / Exit), single-instance mutex guard, and styled Settings dialog.
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -13,41 +13,39 @@ use windows::Win32::Foundation::{
     LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Dwm::{
-    DWM_WINDOW_CORNER_PREFERENCE, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
-    DWMWCP_ROUND, DwmSetWindowAttribute,
+    DWM_WINDOW_CORNER_PREFERENCE, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+    DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CLEARTYPE_QUALITY, CreateFontW, CreatePen, CreateSolidBrush, DEFAULT_CHARSET,
     DEFAULT_PITCH, DeleteObject, DrawTextW, DT_CENTER, DT_SINGLELINE, DT_VCENTER, EndPaint,
-    FF_SWISS, FW_NORMAL, FW_SEMIBOLD, FillRect, HBRUSH, HDC, HFONT, OUT_DEFAULT_PRECIS,
-    PAINTSTRUCT, PS_SOLID, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor,
-    TRANSPARENT,
+    FF_SWISS, FW_NORMAL, FW_SEMIBOLD, FillRect, HBRUSH, HDC, HFONT, InvalidateRect,
+    OUT_DEFAULT_PRECIS, PAINTSTRUCT, PS_SOLID, RoundRect, SelectObject, SetBkColor, SetBkMode,
+    SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
-use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
-};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Controls::{
-    BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX,
-    InitCommonControlsEx, ODS_SELECTED,
+    DRAWITEMSTRUCT, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, ODS_SELECTED,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_OWNERDRAW, CB_ADDSTRING,
-    CB_GETCURSEL, CB_SETCURSEL, CBS_DROPDOWNLIST, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
-    DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetClientRect, GetCursorPos,
-    GetMessageW, GetSystemMetrics, HICON, HMENU, IDC_ARROW, LoadCursorW, MB_ICONWARNING, MB_OK,
-    MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG, MessageBoxW, PostMessageW, PostQuitMessage,
-    RegisterClassW, RegisterWindowMessageW, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, SendMessageW,
-    SetForegroundWindow, ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON,
-    TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORBTN, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DRAWITEM, WM_NULL, WM_PAINT, WM_RBUTTONUP,
-    WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    AppendMenuW, BS_OWNERDRAW, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBS_DROPDOWNLIST,
+    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow,
+    DispatchMessageW, GetClientRect, GetCursorPos, GetDlgCtrlID, GetMessageW, GetSystemMetrics,
+    HICON, HMENU, IDC_ARROW, LoadCursorW, MB_ICONWARNING, MB_OK, MF_GRAYED, MF_SEPARATOR,
+    MF_STRING, MSG, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW,
+    RegisterWindowMessageW, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, SendMessageW, SetForegroundWindow,
+    ShowWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DRAWITEM, WM_NULL, WM_PAINT,
+    WM_RBUTTONUP, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 use windows::core::{PCSTR, PCWSTR};
 
@@ -62,10 +60,10 @@ const ID_MENU_EXIT: usize = 1002;
 const ID_COMBO_PRIMARY: i32 = 2001;
 const ID_COMBO_SECONDARY: i32 = 2002;
 const ID_COMBO_KEY: i32 = 2003;
-const ID_CHK_CTRL: i32 = 2004;
-const ID_CHK_ALT: i32 = 2005;
-const ID_CHK_SHIFT: i32 = 2006;
-const ID_CHK_META: i32 = 2007;
+const ID_PILL_CTRL: i32 = 2004;
+const ID_PILL_ALT: i32 = 2005;
+const ID_PILL_SHIFT: i32 = 2006;
+const ID_PILL_META: i32 = 2007;
 const ID_BTN_SAVE: i32 = 2008;
 const ID_BTN_CANCEL: i32 = 2009;
 const ID_LBL_SUBTITLE: i32 = 2010;
@@ -104,54 +102,45 @@ impl Drop for SingleInstanceGuard {
     }
 }
 
+/// Option 3 — Nord Calm low-contrast Nordic slate palette.
 #[derive(Clone, Copy)]
-struct ThemePalette {
-    dark: bool,
+struct NordPalette {
     window_bg: COLORREF,
     card_bg: COLORREF,
     card_border: COLORREF,
+    input_bg: COLORREF,
+    input_border: COLORREF,
+    text_title: COLORREF,
     text_primary: COLORREF,
     text_muted: COLORREF,
-    accent: COLORREF,
-    accent_pressed: COLORREF,
-    secondary_btn_bg: COLORREF,
-    secondary_btn_pressed: COLORREF,
-    secondary_btn_border: COLORREF,
+    section_ice: COLORREF,
+    pill_on_bg: COLORREF,
+    pill_on_border: COLORREF,
+    pill_on_text: COLORREF,
+    save_bg: COLORREF,
+    save_pressed: COLORREF,
+    cancel_bg: COLORREF,
+    cancel_pressed: COLORREF,
 }
 
-impl ThemePalette {
-    fn for_system() -> Self {
-        if is_windows_dark_mode() {
-            Self {
-                dark: true,
-                window_bg: rgb(28, 28, 30),
-                card_bg: rgb(40, 40, 44),
-                card_border: rgb(62, 62, 68),
-                text_primary: rgb(243, 244, 246),
-                text_muted: rgb(156, 163, 175),
-                accent: rgb(59, 130, 246),
-                accent_pressed: rgb(37, 99, 235),
-                secondary_btn_bg: rgb(50, 50, 56),
-                secondary_btn_pressed: rgb(64, 64, 72),
-                secondary_btn_border: rgb(82, 82, 91),
-            }
-        } else {
-            Self {
-                dark: false,
-                window_bg: rgb(243, 244, 246),
-                card_bg: rgb(255, 255, 255),
-                card_border: rgb(226, 232, 240),
-                text_primary: rgb(15, 23, 42),
-                text_muted: rgb(100, 116, 139),
-                accent: rgb(37, 99, 235),
-                accent_pressed: rgb(29, 78, 216),
-                secondary_btn_bg: rgb(255, 255, 255),
-                secondary_btn_pressed: rgb(241, 245, 249),
-                secondary_btn_border: rgb(203, 213, 225),
-            }
-        }
-    }
-}
+const NORD: NordPalette = NordPalette {
+    window_bg: rgb(36, 41, 51),      // #242933
+    card_bg: rgb(46, 52, 64),        // #2E3440
+    card_border: rgb(59, 66, 82),    // #3B4252
+    input_bg: rgb(36, 41, 51),       // #242933
+    input_border: rgb(67, 76, 94),   // #434C5E
+    text_title: rgb(236, 239, 244),  // #ECEFF4
+    text_primary: rgb(216, 222, 233),// #D8DEE9
+    text_muted: rgb(140, 153, 174),  // #8C99AE
+    section_ice: rgb(136, 192, 208), // #88C0D0
+    pill_on_bg: rgb(50, 75, 87),     // #324B57
+    pill_on_border: rgb(136, 192, 208), // #88C0D0
+    pill_on_text: rgb(229, 244, 248),   // #E5F4F8
+    save_bg: rgb(94, 129, 172),      // #5E81AC
+    save_pressed: rgb(76, 107, 145), // #4C6B91
+    cancel_bg: rgb(46, 52, 64),      // #2E3440
+    cancel_pressed: rgb(59, 66, 82), // #3B4252
+};
 
 const fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
     COLORREF((r as u32) | ((g as u32) << 8) | ((b as u32) << 16))
@@ -163,27 +152,31 @@ type ExitCallback = Box<dyn FnOnce()>;
 static TASKBAR_CREATED_MSG: AtomicU32 = AtomicU32::new(0);
 
 struct DialogResources {
-    palette: ThemePalette,
     dpi: u32,
     window_brush: HBRUSH,
     card_brush: HBRUSH,
+    input_brush: HBRUSH,
     font_title: HFONT,
     font_section: HFONT,
     font_body: HFONT,
     font_sub: HFONT,
+    font_pill: HFONT,
+    font_pill_bold: HFONT,
 }
 
 impl DialogResources {
-    fn new(palette: ThemePalette, dpi: u32) -> Self {
+    fn new(dpi: u32) -> Self {
         Self {
-            palette,
             dpi,
-            window_brush: unsafe { CreateSolidBrush(palette.window_bg) },
-            card_brush: unsafe { CreateSolidBrush(palette.card_bg) },
+            window_brush: unsafe { CreateSolidBrush(NORD.window_bg) },
+            card_brush: unsafe { CreateSolidBrush(NORD.card_bg) },
+            input_brush: unsafe { CreateSolidBrush(NORD.input_bg) },
             font_title: create_ui_font(scale(20, dpi), true),
-            font_section: create_ui_font(scale(13, dpi), true),
+            font_section: create_ui_font(scale(12, dpi), true),
             font_body: create_ui_font(scale(14, dpi), false),
             font_sub: create_ui_font(scale(13, dpi), false),
+            font_pill: create_ui_font(scale(12, dpi), false),
+            font_pill_bold: create_ui_font(scale(12, dpi), true),
         }
     }
 
@@ -191,12 +184,23 @@ impl DialogResources {
         unsafe {
             let _ = DeleteObject(self.window_brush.into());
             let _ = DeleteObject(self.card_brush.into());
+            let _ = DeleteObject(self.input_brush.into());
             let _ = DeleteObject(self.font_title.into());
             let _ = DeleteObject(self.font_section.into());
             let _ = DeleteObject(self.font_body.into());
             let _ = DeleteObject(self.font_sub.into());
+            let _ = DeleteObject(self.font_pill.into());
+            let _ = DeleteObject(self.font_pill_bold.into());
         }
     }
+}
+
+#[derive(Clone, Copy, Default)]
+struct PillStates {
+    ctrl: bool,
+    alt: bool,
+    shift: bool,
+    meta: bool,
 }
 
 struct TrayState {
@@ -208,14 +212,15 @@ struct TrayState {
     on_save: SaveCallback,
     on_exit: Option<ExitCallback>,
     dialog_res: Option<DialogResources>,
+    pills: PillStates,
     // Settings dialog child handles
     combo_primary: HWND,
     combo_secondary: HWND,
     combo_key: HWND,
-    chk_ctrl: HWND,
-    chk_alt: HWND,
-    chk_shift: HWND,
-    chk_meta: HWND,
+    pill_ctrl: HWND,
+    pill_alt: HWND,
+    pill_shift: HWND,
+    pill_meta: HWND,
 }
 
 thread_local! {
@@ -304,13 +309,14 @@ impl TrayHost for WinTrayHost {
                 on_save: Box::new(on_save),
                 on_exit: Some(Box::new(on_exit)),
                 dialog_res: None,
+                pills: PillStates::default(),
                 combo_primary: HWND::default(),
                 combo_secondary: HWND::default(),
                 combo_key: HWND::default(),
-                chk_ctrl: HWND::default(),
-                chk_alt: HWND::default(),
-                chk_shift: HWND::default(),
-                chk_meta: HWND::default(),
+                pill_ctrl: HWND::default(),
+                pill_alt: HWND::default(),
+                pill_shift: HWND::default(),
+                pill_meta: HWND::default(),
             });
         });
 
@@ -346,9 +352,6 @@ fn init_common_controls() {
     let _ = unsafe { InitCommonControlsEx(&icc) };
 }
 
-/// Enables Windows 10/11 dark-mode support for native popup menus via undocumented
-/// `uxtheme.dll` ordinals 135 (`SetPreferredAppMode(AllowDark)`) and 136 (`FlushMenuThemes`).
-/// Fails silently on older Windows builds.
 fn enable_uxtheme_dark_menus() {
     let dll = to_wide_null("uxtheme.dll");
     let Ok(module) = (unsafe { LoadLibraryW(PCWSTR(dll.as_ptr())) }) else {
@@ -357,7 +360,7 @@ fn enable_uxtheme_dark_menus() {
     unsafe {
         if let Some(f) = GetProcAddress(module, PCSTR(135usize as *const u8)) {
             let set_preferred: extern "system" fn(i32) -> i32 = std::mem::transmute(f);
-            let _ = set_preferred(1); // AllowDark
+            let _ = set_preferred(2); // ForceDark to match Nord Calm
         }
         if let Some(f) = GetProcAddress(module, PCSTR(136usize as *const u8)) {
             let flush: extern "system" fn() = std::mem::transmute(f);
@@ -366,50 +369,49 @@ fn enable_uxtheme_dark_menus() {
     }
 }
 
-fn is_windows_dark_mode() -> bool {
-    let subkey = to_wide_null("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
-    let mut key = HKEY::default();
-    if unsafe {
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(subkey.as_ptr()),
-            Some(0),
-            KEY_READ,
-            &mut key,
-        )
-    }
-    .is_err()
-    {
-        return false;
-    }
-
-    let val_name = to_wide_null("AppsUseLightTheme");
-    let mut reg_type = REG_DWORD;
-    let mut data = 1u32;
-    let mut size = std::mem::size_of::<u32>() as u32;
-    let ok = unsafe {
-        RegQueryValueExW(
-            key,
-            PCWSTR(val_name.as_ptr()),
-            None,
-            Some(&mut reg_type),
-            Some((&mut data as *mut u32).cast()),
-            Some(&mut size),
-        )
-        .is_ok()
+/// Applies Windows 11 dark-mode combobox theme (`DarkMode_CFD`) dynamically via `uxtheme.dll`.
+fn apply_dark_combobox_theme(hwnd: HWND) {
+    let dll = to_wide_null("uxtheme.dll");
+    let Ok(module) = (unsafe { LoadLibraryW(PCWSTR(dll.as_ptr())) }) else {
+        return;
     };
-    let _ = unsafe { RegCloseKey(key) };
-    ok && data == 0
+    let proc_name = b"SetWindowTheme\0";
+    let theme_name = to_wide_null("DarkMode_CFD");
+    unsafe {
+        if let Some(f) = GetProcAddress(module, PCSTR(proc_name.as_ptr())) {
+            let set_theme: extern "system" fn(HWND, PCWSTR, PCWSTR) -> i32 = std::mem::transmute(f);
+            let _ = set_theme(hwnd, PCWSTR(theme_name.as_ptr()), PCWSTR::null());
+        }
+    }
 }
 
-fn apply_dwm_window_styling(hwnd: HWND, dark: bool) {
-    let dark_val: i32 = i32::from(dark);
+fn apply_nord_dwm_styling(hwnd: HWND) {
+    let dark_val: i32 = 1;
     let _ = unsafe {
         DwmSetWindowAttribute(
             hwnd,
             DWMWA_USE_IMMERSIVE_DARK_MODE,
             (&dark_val as *const i32).cast(),
             std::mem::size_of::<i32>() as u32,
+        )
+    };
+    // Seamless Nord Calm title bar matching the window background (#242933)
+    let caption = NORD.window_bg.0;
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            (&caption as *const u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    let caption_text = NORD.text_muted.0;
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR,
+            (&caption_text as *const u32).cast(),
+            std::mem::size_of::<u32>() as u32,
         )
     };
     let corner = DWMWCP_ROUND;
@@ -524,10 +526,9 @@ fn open_or_focus_settings_dialog() {
         return;
     }
 
-    let palette = ThemePalette::for_system();
     let base_dpi = unsafe { GetDpiForWindow(tray_hwnd) }.max(96);
     let width = scale(460, base_dpi);
-    let height = scale(390, base_dpi);
+    let height = scale(396, base_dpi);
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
     let x = ((screen_w - width) / 2).max(40);
@@ -554,9 +555,9 @@ fn open_or_focus_settings_dialog() {
         return;
     };
 
-    apply_dwm_window_styling(dlg, palette.dark);
+    apply_nord_dwm_styling(dlg);
     let dpi = unsafe { GetDpiForWindow(dlg) }.max(96);
-    let res = DialogResources::new(palette, dpi);
+    let res = DialogResources::new(dpi);
     let font_title = res.font_title;
     let font_section = res.font_section;
     let font_body = res.font_body;
@@ -568,7 +569,7 @@ fn open_or_focus_settings_dialog() {
         dlg,
         hinst,
         font_title,
-        "LangFlip Settings",
+        "Keyboard & Shortcut",
         Some(ID_LBL_TITLE),
         s(24),
         s(18),
@@ -579,7 +580,7 @@ fn open_or_focus_settings_dialog() {
         dlg,
         hinst,
         font_sub,
-        "Configure your keyboard language pair and trigger shortcut",
+        "Pick two installed layouts and your flip key",
         Some(ID_LBL_SUBTITLE),
         s(24),
         s(46),
@@ -587,12 +588,12 @@ fn open_or_focus_settings_dialog() {
         s(20),
     );
 
-    // Card 1: Keyboard Languages (card painted at x=20..424, y=78..186)
+    // Card 1: Languages
     create_label(
         dlg,
         hinst,
         font_section,
-        "KEYBOARD LANGUAGES",
+        "LANGUAGES",
         Some(ID_LBL_SECTION_1),
         s(36),
         s(90),
@@ -643,12 +644,12 @@ fn open_or_focus_settings_dialog() {
         s(180),
     );
 
-    // Card 2: Trigger Hotkey (card painted at x=20..424, y=200..294)
+    // Card 2: Hotkey
     create_label(
         dlg,
         hinst,
         font_section,
-        "TRIGGER HOTKEY",
+        "HOTKEY",
         Some(ID_LBL_SECTION_2),
         s(36),
         s(212),
@@ -662,7 +663,7 @@ fn open_or_focus_settings_dialog() {
         "Key",
         None,
         s(36),
-        s(238),
+        s(239),
         s(95),
         s(22),
     );
@@ -672,8 +673,8 @@ fn open_or_focus_settings_dialog() {
         font_body,
         ID_COMBO_KEY,
         s(140),
-        s(234),
-        s(150),
+        s(235),
+        s(146),
         s(220),
     );
 
@@ -684,65 +685,65 @@ fn open_or_focus_settings_dialog() {
         "Modifiers",
         None,
         s(36),
-        s(270),
+        s(273),
         s(95),
         s(22),
     );
-    let chk_ctrl = create_checkbox(
+    let pill_ctrl = create_ownerdraw_button(
         dlg,
         hinst,
         font_body,
         "Ctrl",
-        ID_CHK_CTRL,
+        ID_PILL_CTRL,
         s(140),
-        s(268),
+        s(269),
         s(56),
-        s(22),
+        s(25),
     );
-    let chk_alt = create_checkbox(
+    let pill_alt = create_ownerdraw_button(
         dlg,
         hinst,
         font_body,
         "Alt",
-        ID_CHK_ALT,
-        s(202),
-        s(268),
+        ID_PILL_ALT,
+        s(204),
+        s(269),
         s(52),
-        s(22),
+        s(25),
     );
-    let chk_shift = create_checkbox(
+    let pill_shift = create_ownerdraw_button(
         dlg,
         hinst,
         font_body,
         "Shift",
-        ID_CHK_SHIFT,
-        s(260),
-        s(268),
-        s(62),
-        s(22),
+        ID_PILL_SHIFT,
+        s(264),
+        s(269),
+        s(60),
+        s(25),
     );
-    let chk_meta = create_checkbox(
+    let pill_meta = create_ownerdraw_button(
         dlg,
         hinst,
         font_body,
         "Win",
-        ID_CHK_META,
-        s(328),
-        s(268),
-        s(60),
-        s(22),
+        ID_PILL_META,
+        s(332),
+        s(269),
+        s(56),
+        s(25),
     );
 
-    // Action buttons (owner-drawn modern rounded pills)
+    // Action buttons
     let _btn_save = create_ownerdraw_button(
         dlg,
         hinst,
         font_body,
         "Save",
         ID_BTN_SAVE,
-        s(234),
-        s(308),
-        s(90),
+        s(242),
+        s(314),
+        s(86),
         s(32),
     );
     let _btn_cancel = create_ownerdraw_button(
@@ -751,23 +752,18 @@ fn open_or_focus_settings_dialog() {
         font_body,
         "Cancel",
         ID_BTN_CANCEL,
-        s(334),
-        s(308),
-        s(90),
+        s(338),
+        s(314),
+        s(86),
         s(32),
     );
 
-    // Populate installed languages
+    // Populate clean human-readable installed language names
     let mut primary_idx = 0usize;
     let mut secondary_idx = usize::from(snapshot.installed_layouts.len() > 1);
     for (i, layout) in snapshot.installed_layouts.iter().enumerate() {
-        let label = format!(
-            "{} ({})",
-            layout.display_name,
-            layout.id.as_str().to_ascii_uppercase()
-        );
-        combo_add_string(combo_primary, &label);
-        combo_add_string(combo_secondary, &label);
+        combo_add_string(combo_primary, &layout.display_name);
+        combo_add_string(combo_secondary, &layout.display_name);
         if layout.id == snapshot.layouts.primary {
             primary_idx = i;
         }
@@ -789,10 +785,12 @@ fn open_or_focus_settings_dialog() {
     }
     combo_set_cursel(combo_key, key_idx);
 
-    set_checked(chk_ctrl, snapshot.hotkey.ctrl);
-    set_checked(chk_alt, snapshot.hotkey.alt);
-    set_checked(chk_shift, snapshot.hotkey.shift);
-    set_checked(chk_meta, snapshot.hotkey.meta);
+    let initial_pills = PillStates {
+        ctrl: snapshot.hotkey.ctrl,
+        alt: snapshot.hotkey.alt,
+        shift: snapshot.hotkey.shift,
+        meta: snapshot.hotkey.meta,
+    };
 
     TRAY_STATE.with(|slot| {
         if let Some(state) = slot.borrow_mut().as_mut() {
@@ -800,18 +798,49 @@ fn open_or_focus_settings_dialog() {
                 old.destroy();
             }
             state.settings_hwnd = Some(dlg);
+            state.pills = initial_pills;
             state.combo_primary = combo_primary;
             state.combo_secondary = combo_secondary;
             state.combo_key = combo_key;
-            state.chk_ctrl = chk_ctrl;
-            state.chk_alt = chk_alt;
-            state.chk_shift = chk_shift;
-            state.chk_meta = chk_meta;
+            state.pill_ctrl = pill_ctrl;
+            state.pill_alt = pill_alt;
+            state.pill_shift = pill_shift;
+            state.pill_meta = pill_meta;
         }
     });
 
     let _ = unsafe { ShowWindow(dlg, SW_SHOW) };
     let _ = unsafe { SetForegroundWindow(dlg) };
+}
+
+fn toggle_pill(id: i32) {
+    let target_hwnd = TRAY_STATE.with(|slot| {
+        let mut borrow = slot.borrow_mut();
+        let state = borrow.as_mut()?;
+        match id {
+            ID_PILL_CTRL => {
+                state.pills.ctrl = !state.pills.ctrl;
+                Some(state.pill_ctrl)
+            }
+            ID_PILL_ALT => {
+                state.pills.alt = !state.pills.alt;
+                Some(state.pill_alt)
+            }
+            ID_PILL_SHIFT => {
+                state.pills.shift = !state.pills.shift;
+                Some(state.pill_shift)
+            }
+            ID_PILL_META => {
+                state.pills.meta = !state.pills.meta;
+                Some(state.pill_meta)
+            }
+            _ => None,
+        }
+    });
+
+    if let Some(hwnd) = target_hwnd {
+        let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
+    }
 }
 
 fn handle_settings_save(dlg: HWND) {
@@ -822,26 +851,17 @@ fn handle_settings_save(dlg: HWND) {
             state.combo_primary,
             state.combo_secondary,
             state.combo_key,
-            state.chk_ctrl,
-            state.chk_alt,
-            state.chk_shift,
-            state.chk_meta,
+            state.pills,
         ))
     });
 
-    let Some((combo_primary, combo_secondary, combo_key, chk_ctrl, chk_alt, chk_shift, chk_meta)) =
-        controls
-    else {
+    let Some((combo_primary, combo_secondary, combo_key, pills)) = controls else {
         return;
     };
 
     let p_idx = combo_get_cursel(combo_primary);
     let s_idx = combo_get_cursel(combo_secondary);
     let k_idx = combo_get_cursel(combo_key);
-    let ctrl = is_checked(chk_ctrl);
-    let alt = is_checked(chk_alt);
-    let shift = is_checked(chk_shift);
-    let meta = is_checked(chk_meta);
 
     let result: Result<(), String> = TRAY_STATE.with(|slot| {
         let mut borrow = slot.borrow_mut();
@@ -877,10 +897,10 @@ fn handle_settings_save(dlg: HWND) {
 
         let new_hotkey = HotkeySpec {
             key,
-            ctrl,
-            alt,
-            shift,
-            meta,
+            ctrl: pills.ctrl,
+            alt: pills.alt,
+            shift: pills.shift,
+            meta: pills.meta,
         };
         let new_pair = LayoutPair { primary, secondary };
 
@@ -963,9 +983,9 @@ unsafe extern "system" fn settings_wnd_proc(
                 slot.borrow()
                     .as_ref()
                     .and_then(|s| s.dialog_res.as_ref())
-                    .map(|r| (r.palette, r.dpi, r.window_brush, r.card_brush))
+                    .map(|r| (r.dpi, r.window_brush, r.card_brush))
             });
-            if let Some((palette, dpi, win_brush, card_brush)) = paint_info {
+            if let Some((dpi, win_brush, card_brush)) = paint_info {
                 let mut ps = PAINTSTRUCT::default();
                 let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
                 let mut rc = RECT::default();
@@ -974,14 +994,14 @@ unsafe extern "system" fn settings_wnd_proc(
 
                 let s = |px: i32| scale(px, dpi);
                 let radius = s(10);
-                let pen = unsafe { CreatePen(PS_SOLID, 1, palette.card_border) };
+                let pen = unsafe { CreatePen(PS_SOLID, 1, NORD.card_border) };
                 let old_pen = unsafe { SelectObject(hdc, pen.into()) };
                 let old_brush = unsafe { SelectObject(hdc, card_brush.into()) };
 
-                // Card 1: Keyboard Languages
+                // Card 1: Languages
                 let _ = unsafe { RoundRect(hdc, s(20), s(78), s(424), s(188), radius, radius) };
-                // Card 2: Trigger Hotkey
-                let _ = unsafe { RoundRect(hdc, s(20), s(200), s(424), s(296), radius, radius) };
+                // Card 2: Hotkey
+                let _ = unsafe { RoundRect(hdc, s(20), s(200), s(424), s(304), radius, radius) };
 
                 unsafe {
                     SelectObject(hdc, old_brush);
@@ -996,27 +1016,25 @@ unsafe extern "system" fn settings_wnd_proc(
         WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             let hdc = HDC(wparam.0 as *mut std::ffi::c_void);
             let ctrl = HWND(lparam.0 as *mut std::ffi::c_void);
-            let ctrl_id = unsafe { windows::Win32::UI::WindowsAndMessaging::GetDlgCtrlID(ctrl) };
-            let colors = TRAY_STATE.with(|slot| {
+            let ctrl_id = unsafe { GetDlgCtrlID(ctrl) };
+            let brushes = TRAY_STATE.with(|slot| {
                 slot.borrow()
                     .as_ref()
                     .and_then(|s| s.dialog_res.as_ref())
-                    .map(|r| (r.palette, r.window_brush, r.card_brush))
+                    .map(|r| (r.window_brush, r.card_brush))
             });
-            if let Some((palette, win_brush, card_brush)) = colors {
+            if let Some((win_brush, card_brush)) = brushes {
                 let is_header = ctrl_id == ID_LBL_TITLE || ctrl_id == ID_LBL_SUBTITLE;
-                let is_muted = ctrl_id == ID_LBL_SUBTITLE
-                    || ctrl_id == ID_LBL_SECTION_1
-                    || ctrl_id == ID_LBL_SECTION_2;
-                let text_col = if is_muted {
-                    palette.text_muted
-                } else {
-                    palette.text_primary
+                let text_col = match ctrl_id {
+                    ID_LBL_TITLE => NORD.text_title,
+                    ID_LBL_SUBTITLE => NORD.text_muted,
+                    ID_LBL_SECTION_1 | ID_LBL_SECTION_2 => NORD.section_ice,
+                    _ => NORD.text_primary,
                 };
                 let (bg_col, brush) = if is_header {
-                    (palette.window_bg, win_brush)
+                    (NORD.window_bg, win_brush)
                 } else {
-                    (palette.card_bg, card_brush)
+                    (NORD.card_bg, card_brush)
                 };
                 unsafe {
                     SetTextColor(hdc, text_col);
@@ -1026,28 +1044,72 @@ unsafe extern "system" fn settings_wnd_proc(
             }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
-        WM_DRAWITEM => {
-            let dis = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
-            let info = TRAY_STATE.with(|slot| {
+        WM_CTLCOLORLISTBOX | WM_CTLCOLOREDIT => {
+            let hdc = HDC(wparam.0 as *mut std::ffi::c_void);
+            let input_brush = TRAY_STATE.with(|slot| {
                 slot.borrow()
                     .as_ref()
                     .and_then(|s| s.dialog_res.as_ref())
-                    .map(|r| (r.palette, r.dpi, r.font_body, r.window_brush))
+                    .map(|r| r.input_brush)
             });
-            if let Some((palette, dpi, font, win_brush)) = info {
-                draw_modern_button(dis, palette, dpi, font, win_brush);
+            if let Some(brush) = input_brush {
+                unsafe {
+                    SetTextColor(hdc, NORD.text_title);
+                    SetBkColor(hdc, NORD.input_bg);
+                }
+                return LRESULT(brush.0 as isize);
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_DRAWITEM => {
+            let dis = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+            let info = TRAY_STATE.with(|slot| {
+                let borrow = slot.borrow();
+                let st = borrow.as_ref()?;
+                let r = st.dialog_res.as_ref()?;
+                Some((
+                    r.dpi,
+                    r.font_body,
+                    r.font_pill,
+                    r.font_pill_bold,
+                    r.window_brush,
+                    r.card_brush,
+                    st.pills,
+                ))
+            });
+            if let Some((dpi, font_body, font_pill, font_pill_bold, win_brush, card_brush, pills)) =
+                info
+            {
+                draw_owner_control(
+                    dis,
+                    dpi,
+                    font_body,
+                    font_pill,
+                    font_pill_bold,
+                    win_brush,
+                    card_brush,
+                    pills,
+                );
                 return LRESULT(1);
             }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         WM_COMMAND => {
             let id = (wparam.0 & 0xFFFF) as i32;
-            if id == ID_BTN_SAVE {
-                handle_settings_save(hwnd);
-                return LRESULT(0);
-            } else if id == ID_BTN_CANCEL {
-                let _ = unsafe { DestroyWindow(hwnd) };
-                return LRESULT(0);
+            match id {
+                ID_PILL_CTRL | ID_PILL_ALT | ID_PILL_SHIFT | ID_PILL_META => {
+                    toggle_pill(id);
+                    return LRESULT(0);
+                }
+                ID_BTN_SAVE => {
+                    handle_settings_save(hwnd);
+                    return LRESULT(0);
+                }
+                ID_BTN_CANCEL => {
+                    let _ = unsafe { DestroyWindow(hwnd) };
+                    return LRESULT(0);
+                }
+                _ => {}
             }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
@@ -1070,43 +1132,84 @@ unsafe extern "system" fn settings_wnd_proc(
     }
 }
 
-fn draw_modern_button(
+#[allow(clippy::too_many_arguments)]
+fn draw_owner_control(
     dis: &DRAWITEMSTRUCT,
-    palette: ThemePalette,
     dpi: u32,
-    font: HFONT,
+    font_body: HFONT,
+    font_pill: HFONT,
+    font_pill_bold: HFONT,
     win_brush: HBRUSH,
+    card_brush: HBRUSH,
+    pills: PillStates,
 ) {
     let hdc = dis.hDC;
     let rc = dis.rcItem;
-    let is_save = dis.CtlID as i32 == ID_BTN_SAVE;
+    let id = dis.CtlID as i32;
     let pressed = (dis.itemState.0 & ODS_SELECTED.0) != 0;
 
-    let (fill_col, border_col, text_col, label) = if is_save {
-        let bg = if pressed {
-            palette.accent_pressed
-        } else {
-            palette.accent
-        };
-        (bg, bg, rgb(255, 255, 255), "Save")
-    } else {
-        let bg = if pressed {
-            palette.secondary_btn_pressed
-        } else {
-            palette.secondary_btn_bg
-        };
-        (bg, palette.secondary_btn_border, palette.text_primary, "Cancel")
+    let (backdrop, fill_col, border_col, text_col, font, label, radius_px) = match id {
+        ID_BTN_SAVE => {
+            let bg = if pressed { NORD.save_pressed } else { NORD.save_bg };
+            (win_brush, bg, bg, NORD.text_title, font_body, "Save", 7)
+        }
+        ID_BTN_CANCEL => {
+            let bg = if pressed {
+                NORD.cancel_pressed
+            } else {
+                NORD.cancel_bg
+            };
+            (
+                win_brush,
+                bg,
+                NORD.input_border,
+                NORD.text_primary,
+                font_body,
+                "Cancel",
+                7,
+            )
+        }
+        ID_PILL_CTRL | ID_PILL_ALT | ID_PILL_SHIFT | ID_PILL_META => {
+            let (active, text) = match id {
+                ID_PILL_CTRL => (pills.ctrl, "Ctrl"),
+                ID_PILL_ALT => (pills.alt, "Alt"),
+                ID_PILL_SHIFT => (pills.shift, "Shift"),
+                _ => (pills.meta, "Win"),
+            };
+            if active {
+                (
+                    card_brush,
+                    NORD.pill_on_bg,
+                    NORD.pill_on_border,
+                    NORD.pill_on_text,
+                    font_pill_bold,
+                    text,
+                    6,
+                )
+            } else {
+                (
+                    card_brush,
+                    NORD.input_bg,
+                    NORD.input_border,
+                    NORD.text_muted,
+                    font_pill,
+                    text,
+                    6,
+                )
+            }
+        }
+        _ => return,
     };
 
     unsafe {
-        FillRect(hdc, &rc, win_brush);
+        FillRect(hdc, &rc, backdrop);
         let brush = CreateSolidBrush(fill_col);
         let pen = CreatePen(PS_SOLID, 1, border_col);
         let old_b = SelectObject(hdc, brush.into());
         let old_p = SelectObject(hdc, pen.into());
         let old_f = SelectObject(hdc, font.into());
 
-        let r = scale(7, dpi);
+        let r = scale(radius_px, dpi);
         let _ = RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, r, r);
 
         SetBkMode(hdc, TRANSPARENT);
@@ -1223,41 +1326,7 @@ fn create_combobox(
     }
     .unwrap_or_default();
     apply_font(hwnd, font);
-    hwnd
-}
-
-#[allow(clippy::too_many_arguments)]
-fn create_checkbox(
-    parent: HWND,
-    hinst: HINSTANCE,
-    font: HFONT,
-    text: &str,
-    id: i32,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-) -> HWND {
-    let cls = to_wide_null("BUTTON");
-    let txt = to_wide_null(text);
-    let hwnd = unsafe {
-        CreateWindowExW(
-            WINDOW_EX_STYLE(0),
-            PCWSTR(cls.as_ptr()),
-            PCWSTR(txt.as_ptr()),
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-            x,
-            y,
-            w,
-            h,
-            Some(parent),
-            Some(HMENU(id as isize as *mut std::ffi::c_void)),
-            Some(hinst),
-            None,
-        )
-    }
-    .unwrap_or_default();
-    apply_font(hwnd, font);
+    apply_dark_combobox_theme(hwnd);
     hwnd
 }
 
@@ -1308,16 +1377,6 @@ fn combo_set_cursel(combo: HWND, index: usize) {
 fn combo_get_cursel(combo: HWND) -> usize {
     let res = unsafe { SendMessageW(combo, CB_GETCURSEL, Some(WPARAM(0)), Some(LPARAM(0))) };
     res.0.max(0) as usize
-}
-
-fn set_checked(chk: HWND, checked: bool) {
-    let state = if checked { BST_CHECKED.0 } else { BST_UNCHECKED.0 };
-    unsafe { SendMessageW(chk, BM_SETCHECK, Some(WPARAM(state as usize)), Some(LPARAM(0))) };
-}
-
-fn is_checked(chk: HWND) -> bool {
-    let res = unsafe { SendMessageW(chk, BM_GETCHECK, Some(WPARAM(0)), Some(LPARAM(0))) };
-    res.0 as u32 == BST_CHECKED.0
 }
 
 fn to_wide_null(s: &str) -> Vec<u16> {

@@ -13,7 +13,9 @@ use std::time::{Duration, Instant};
 use langflip_core::layout::{InstalledLayout, LayoutId};
 use langflip_core::ports::{LayoutController, LayoutSwitchOutcome};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::Globalization::LCIDToLocaleName;
+use windows::Win32::Globalization::{
+    GetLocaleInfoEx, LCIDToLocaleName, LOCALE_SENGLISHDISPLAYNAME, LOCALE_SENGLISHLANGUAGENAME,
+};
 use windows::Win32::System::Registry::{
     HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_SZ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
     RegQueryValueExW,
@@ -62,20 +64,37 @@ impl WinLayoutController {
         hkls.truncate(filled as usize);
 
         let reg_entries = load_registry_keyboard_layouts();
+        let mut raw_items = Vec::new();
         for hkl in hkls {
             let raw = hkl.0 as usize;
             let lang_id = (raw & 0xFFFF) as u16;
             let device_id = ((raw >> 16) & 0xFFFF) as u16;
 
-            let (klid, display_name) = resolve_hkl_from_registry(lang_id, device_id, &reg_entries);
+            let (klid, reg_text) = resolve_hkl_from_registry(lang_id, device_id, &reg_entries);
             let id = LayoutId::new(&klid);
             let language_tag = lcid_to_bcp47(lang_id);
+            let friendly = friendly_locale_name(language_tag.as_deref(), &reg_text);
 
             self.hkl_to_id.insert(raw, id.clone());
             self.id_to_hkl.insert(id.clone(), raw);
+            raw_items.push((id, language_tag, friendly, reg_text));
+        }
+
+        // Only disambiguate with the registry layout variant if two installed
+        // layouts share the same friendly locale name.
+        for (idx, (id, language_tag, friendly, reg_text)) in raw_items.iter().enumerate() {
+            let duplicate = raw_items
+                .iter()
+                .enumerate()
+                .any(|(j, (_, _, other_name, _))| j != idx && other_name == friendly);
+            let display_name = if duplicate && !reg_text.is_empty() && reg_text != "<unknown>" {
+                format!("{friendly} — {reg_text}")
+            } else {
+                friendly.clone()
+            };
             self.installed.push(InstalledLayout {
-                id,
-                language_tag,
+                id: id.clone(),
+                language_tag: language_tag.clone(),
                 display_name,
             });
         }
@@ -305,6 +324,28 @@ fn lcid_to_bcp47(lang_id: u16) -> Option<String> {
             .to_string_lossy()
             .into_owned(),
     )
+}
+
+fn friendly_locale_name(bcp47: Option<&str>, fallback: &str) -> String {
+    let Some(tag) = bcp47 else {
+        return fallback.to_string();
+    };
+    let tag_wide = to_wide_null(tag);
+    // For languages with a single primary region (like Hebrew he-IL), show clean "Hebrew";
+    // for multi-region languages (like English en-IN / en-US / en-GB), show "English (India)".
+    let lctype = if tag.eq_ignore_ascii_case("he-IL") || tag.eq_ignore_ascii_case("he") {
+        LOCALE_SENGLISHLANGUAGENAME
+    } else {
+        LOCALE_SENGLISHDISPLAYNAME
+    };
+    let mut buf = [0u16; 128];
+    let len = unsafe { GetLocaleInfoEx(PCWSTR(tag_wide.as_ptr()), lctype, Some(&mut buf)) };
+    if len > 1 {
+        return OsString::from_wide(&buf[..(len as usize - 1)])
+            .to_string_lossy()
+            .into_owned();
+    }
+    fallback.to_string()
 }
 
 fn to_wide_null(s: &str) -> Vec<u16> {

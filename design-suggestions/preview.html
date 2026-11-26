@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LangFlip UI Design Suggestions</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 32px;
+      background: #0d1015;
+      color: #e5e7eb;
+      font-family: "Segoe UI", -apple-system, sans-serif;
+    }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 8px; }
+    p.sub { color: #9ca3af; margin: 0 0 28px; font-size: 14px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+      gap: 24px;
+    }
+    .card {
+      background: #161a22;
+      border: 1px solid #262c38;
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .card h2 { font-size: 15px; margin: 0 0 6px; color: #f3f4f6; }
+    .card p { font-size: 12.5px; color: #9ca3af; margin: 0 0 14px; }
+    .card img { width: 100%; height: auto; border-radius: 8px; display: block; }
+  </style>
+</head>
+<body>
+  <h1>LangFlip — UI Design Suggestions</h1>
+  <p class="sub">Four calm, understated options for the Windows 11 Settings dialog and system tray menu.</p>
+  <div class="grid">
+    <div class="card">
+      <h2>Option 1 — Mica Quiet Dark (Native Windows 11)</h2>
+      <p>Warm charcoal surface, soft cards, dark-themed dropdowns, muted slate-blue Save, soft modifier pills.</p>
+      <img src="option1-mica-quiet.svg" alt="Option 1 — Mica Quiet Dark" />
+    </div>
+    <div class="card">
+      <h2>Option 2 — Warm Slate Minimal (Linear / Raycast Inspired)</h2>
+      <p>Flat single surface, hairline dividers, side-by-side language pair, inline modifier pills, shortcut preview, monochrome Save.</p>
+      <img src="option2-slate-minimal.svg" alt="Option 2 — Warm Slate Minimal" />
+    </div>
+    <div class="card">
+      <h2>Option 3 — Nord Calm (Low-Contrast Nordic Slate)</h2>
+      <p>Cool low-contrast slate-blue palette with frosted ice-blue accents and muted steel-blue Save.</p>
+      <img src="option3-nord-calm.svg" alt="Option 3 — Nord Calm" />
+    </div>
+    <div class="card">
+      <h2>Option 4 — Daylight Quiet (Warm Paper Minimal)</h2>
+      <p>Calm warm off-white surface, crisp white cards, muted charcoal Save (can auto-pair with Option 1/2 in dark mode).</p>
+      <img src="option4-daylight-quiet.svg" alt="Option 4 — Daylight Quiet" />
+    </div>
+  </div>
+</body>
+</html>

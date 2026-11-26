@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 410" width="700" height="410">
+  <defs>
+    <filter id="sh2" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <style>
+    .s { font-family: "Segoe UI", -apple-system, sans-serif; }
+    .m { font-family: Consolas, ui-monospace, monospace; }
+  </style>
+  <rect width="700" height="410" rx="12" fill="#0F1115"/>
+
+  <!-- Settings Window: Flat Linear/Raycast inspired -->
+  <g filter="url(#sh2)">
+    <rect x="24" y="34" width="440" height="340" rx="10" fill="#17191E" stroke="#282C35" stroke-width="1"/>
+    <text x="44" y="64" class="s" font-size="16" font-weight="600" fill="#ECEEF2">LangFlip</text>
+    <text x="114" y="64" class="s" font-size="13" fill="#687080">/ Settings</text>
+    <text x="442" y="63" class="s" font-size="13" fill="#5A6270">✕</text>
+    <line x1="25" y1="80" x2="463" y2="80" stroke="#232730" stroke-width="1"/>
+
+    <!-- Inline Language Pair Row (Side by Side!) -->
+    <text x="44" y="106" class="s" font-size="11.5" font-weight="600" fill="#7D8596">Language pair</text>
+    <rect x="44" y="116" width="176" height="34" rx="6" fill="#1F222A" stroke="#303642" stroke-width="1"/>
+    <text x="56" y="138" class="s" font-size="13" fill="#E6E9EF">English (India)</text>
+    <text x="202" y="138" class="s" font-size="11" fill="#7D8596">▾</text>
+
+    <text x="244" y="138" text-anchor="middle" class="s" font-size="15" fill="#687080">⇄</text>
+
+    <rect x="268" y="116" width="176" height="34" rx="6" fill="#1F222A" stroke="#303642" stroke-width="1"/>
+    <text x="280" y="138" class="s" font-size="13" fill="#E6E9EF">Hebrew</text>
+    <text x="426" y="138" class="s" font-size="11" fill="#7D8596">▾</text>
+
+    <line x1="44" y1="172" x2="444" y2="172" stroke="#232730" stroke-width="1"/>
+
+    <!-- Trigger Hotkey Row -->
+    <text x="44" y="198" class="s" font-size="11.5" font-weight="600" fill="#7D8596">Trigger hotkey</text>
+    <rect x="44" y="208" width="150" height="32" rx="6" fill="#1F222A" stroke="#303642" stroke-width="1"/>
+    <text x="56" y="229" class="s" font-size="13" fill="#E6E9EF">Pause</text>
+    <text x="176" y="229" class="s" font-size="11" fill="#7D8596">▾</text>
+
+    <!-- Compact Modifier Chips on same row -->
+    <rect x="208" y="211" width="52" height="26" rx="6" fill="#1F222A" stroke="#303642" stroke-width="1"/>
+    <text x="234" y="228" text-anchor="middle" class="s" font-size="11.5" fill="#8E96A6">Ctrl</text>
+    <rect x="266" y="211" width="48" height="26" rx="6" fill="#1F222A" stroke="#303642" stroke-width="1"/>
+    <text x="290" y="228" text-anchor="middle" class="s" font-size="11.5" fill="#8E96A6">Alt</text>
+    <rect x="320" y="211" width="58" height="26" rx="6" fill="#2A2F45" stroke="#6366F1" stroke-width="1"/>
+    <text x="349" y="228" text-anchor="middle" class="s" font-size="11.5" font-weight="600" fill="#E0E7FF">Shift</text>
+    <rect x="384" y="211" width="60" height="26" rx="6" fill="#1F222A" stroke="#303642" stroke-width="1"/>
+    <text x="414" y="228" text-anchor="middle" class="s" font-size="11.5" fill="#8E96A6">Win</text>
+
+    <!-- Subtle shortcut preview pill -->
+    <text x="44" y="272" class="s" font-size="11.5" fill="#687080">Active shortcut:</text>
+    <rect x="132" y="256" width="96" height="22" rx="4" fill="#1F222A" stroke="#2D323E" stroke-width="1"/>
+    <text x="180" y="271" text-anchor="middle" class="m" font-size="11.5" fill="#C7CDD8">Shift + Pause</text>
+
+    <line x1="25" y1="306" x2="463" y2="306" stroke="#232730" stroke-width="1"/>
+
+    <!-- Quiet monochrome-leaning footer -->
+    <rect x="278" y="324" width="78" height="32" rx="6" fill="#E6E9EF"/>
+    <text x="317" y="344" text-anchor="middle" class="s" font-size="13" font-weight="600" fill="#111318">Save</text>
+    <rect x="364" y="324" width="80" height="32" rx="6" fill="transparent" stroke="#303642" stroke-width="1"/>
+    <text x="404" y="344" text-anchor="middle" class="s" font-size="13" fill="#9CA3AF">Cancel</text>
+  </g>
+
+  <!-- Tray Popup Menu Preview -->
+  <text x="502" y="136" class="s" font-size="11" font-weight="600" fill="#5A6270">TRAY MENU</text>
+  <g filter="url(#sh2)">
+    <rect x="500" y="148" width="174" height="108" rx="8" fill="#1B1E24" stroke="#2D323D" stroke-width="1"/>
+    <text x="516" y="172" class="s" font-size="11.5" font-weight="600" fill="#687080">LangFlip</text>
+    <line x1="510" y1="182" x2="664" y2="182" stroke="#262A34" stroke-width="1"/>
+    <rect x="506" y="188" width="162" height="28" rx="5" fill="#262A35"/>
+    <text x="518" y="206" class="s" font-size="13" fill="#ECEEF2">Settings...</text>
+    <text x="518" y="238" class="s" font-size="13" fill="#9CA3AF">Exit</text>
+  </g>
+</svg>
