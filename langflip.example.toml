@@ -30,3 +30,5 @@ max_buffer_len = 128
 replay_delay_ms = 1
 # If true, pressing the hotkey on an empty buffer toggles the keyboard layout.
 toggle_on_empty_buffer = true
+# If true, LangFlip registers itself to launch automatically when Windows starts (per-user Run key).
+auto_start = true

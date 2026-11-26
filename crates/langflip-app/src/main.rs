@@ -79,6 +79,7 @@ mod win_main {
     use langflip_core::ports::{
         InputListener, LayoutController, ListenerShutdown, SettingsSnapshot, TrayHost,
     };
+    use langflip_platform_win::autostart::sync_auto_start;
     use langflip_platform_win::focus::WinFocusObserver;
     use langflip_platform_win::hook::WinInputListener;
     use langflip_platform_win::injector::WinInputInjector;
@@ -121,6 +122,10 @@ mod win_main {
             eprintln!("langflip: warning: {}", w.message);
         }
         config.layouts = resolved_pair;
+
+        if let Err(err) = sync_auto_start(config.auto_start) {
+            eprintln!("langflip: warning: {err}");
+        }
 
         if metrics {
             println!(
@@ -233,6 +238,7 @@ mod win_main {
             installed_layouts: installed,
             layouts: config.layouts.clone(),
             hotkey: config.hotkey,
+            auto_start: config.auto_start,
         };
 
         let mut active_config = config;
@@ -241,10 +247,11 @@ mod win_main {
 
         let tray_res = WinTrayHost.run(
             initial_snapshot,
-            move |new_pair, new_hotkey| {
+            move |new_pair, new_hotkey, new_auto_start| {
                 let mut updated = active_config.clone();
                 updated.layouts = new_pair.clone();
                 updated.hotkey = new_hotkey;
+                updated.auto_start = new_auto_start;
 
                 let save_path = AppConfig::resolve_save_path(
                     loaded_path.as_deref(),
@@ -252,6 +259,7 @@ mod win_main {
                 )
                 .map_err(|e| e.to_string())?;
                 updated.save_to_path(&save_path).map_err(|e| e.to_string())?;
+                sync_auto_start(new_auto_start)?;
 
                 active_config = updated;
                 if let Ok(mut guard) = pending_update.lock() {
