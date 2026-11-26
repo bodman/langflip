@@ -26,10 +26,11 @@ use windows::core::{PCWSTR, PWSTR};
 
 use crate::focus::foreground_gui_target;
 
-/// Maps Windows `HKL` handles to normalized `LayoutId` (KLID) strings and back.
+/// Maps Windows `HKL` handles (stored as `usize` so this controller is `Send`)
+/// to normalized `LayoutId` (KLID) strings and back.
 pub struct WinLayoutController {
     hkl_to_id: HashMap<usize, LayoutId>,
-    id_to_hkl: HashMap<LayoutId, HKL>,
+    id_to_hkl: HashMap<LayoutId, usize>,
     installed: Vec<InstalledLayout>,
 }
 
@@ -71,7 +72,7 @@ impl WinLayoutController {
             let language_tag = lcid_to_bcp47(lang_id);
 
             self.hkl_to_id.insert(raw, id.clone());
-            self.id_to_hkl.insert(id.clone(), hkl);
+            self.id_to_hkl.insert(id.clone(), raw);
             self.installed.push(InstalledLayout {
                 id,
                 language_tag,
@@ -126,9 +127,10 @@ impl LayoutController for WinLayoutController {
         let Some((focus_hwnd, focus_tid)) = foreground_gui_target() else {
             return Ok(LayoutSwitchOutcome::RejectedOrTimedOut);
         };
-        let Some(&target_hkl) = self.id_to_hkl.get(target) else {
+        let Some(&target_raw) = self.id_to_hkl.get(target) else {
             return Err(format!("target layout `{target}` is not installed"));
         };
+        let target_hkl = HKL(target_raw as *mut std::ffi::c_void);
 
         let start = Instant::now();
         let _ = unsafe {

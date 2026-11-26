@@ -4,9 +4,9 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use langflip_core::hotkey::{HotkeyDecision, HotkeyMatcher, HotkeySpec};
@@ -25,18 +25,39 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, EVENT_SYSTEM_FOREGROUND, GetMessageW, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
     LLKHF_INJECTED, MSG, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
-    WH_KEYBOARD_LL, WH_MOUSE_LL, WINEVENT_OUTOFCONTEXT, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
-    WM_MBUTTONDOWN, WM_QUIT, WM_RBUTTONDOWN, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WH_KEYBOARD_LL, WH_MOUSE_LL, WINEVENT_OUTOFCONTEXT, WM_APP, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_QUIT, WM_RBUTTONDOWN, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 use crate::focus::foreground_gui_target;
 use crate::injector::LANGFLIP_INJECTED_MARKER;
 
-/// Shutdown handle that wakes an idle `GetMessageW` loop immediately via `WM_QUIT`.
+const WM_APP_UPDATE_HOTKEY: u32 = WM_APP + 10;
+
+/// Shutdown & live-config handle for the Windows hook thread.
+/// Wakes an idle `GetMessageW` loop immediately via `PostThreadMessageW`.
 #[derive(Clone)]
 pub struct WinShutdownHandle {
     thread_id: u32,
     stopped: Arc<AtomicBool>,
+    pending_hotkey: Arc<Mutex<Option<HotkeySpec>>>,
+}
+
+impl WinShutdownHandle {
+    /// Applies a new trigger hotkey on the hook thread without locking inside `keyboard_proc`.
+    pub fn update_hotkey(&self, spec: HotkeySpec) {
+        if let Ok(mut guard) = self.pending_hotkey.lock() {
+            *guard = Some(spec);
+        }
+        let _ = unsafe {
+            PostThreadMessageW(
+                self.thread_id,
+                WM_APP_UPDATE_HOTKEY,
+                WPARAM(0),
+                LPARAM(0),
+            )
+        };
+    }
 }
 
 impl ListenerShutdown for WinShutdownHandle {
@@ -91,9 +112,11 @@ impl InputListener for WinInputListener {
     {
         let thread_id = unsafe { GetCurrentThreadId() };
         let stopped = Arc::new(AtomicBool::new(false));
+        let pending_hotkey = Arc::new(Mutex::new(None));
         let shutdown = WinShutdownHandle {
             thread_id,
             stopped: stopped.clone(),
+            pending_hotkey: pending_hotkey.clone(),
         };
 
         HOOK_STATE.with(|slot| {
@@ -135,6 +158,16 @@ impl InputListener for WinInputListener {
             let ret = unsafe { GetMessageW(&mut msg, None, 0, 0) };
             if ret.0 <= 0 {
                 break;
+            }
+            if msg.message == WM_APP_UPDATE_HOTKEY
+                && let Ok(mut guard) = pending_hotkey.lock()
+                && let Some(new_spec) = guard.take()
+            {
+                HOOK_STATE.with(|slot| {
+                    if let Some(state) = slot.borrow_mut().as_mut() {
+                        state.matcher.set_spec(new_spec);
+                    }
+                });
             }
         }
 

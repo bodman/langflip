@@ -8,6 +8,10 @@ pub mod focus;
 #[cfg(target_os = "windows")]
 pub mod hook;
 #[cfg(target_os = "windows")]
+pub mod icon;
+#[cfg(target_os = "windows")]
 pub mod injector;
 #[cfg(target_os = "windows")]
 pub mod layout;
+#[cfg(target_os = "windows")]
+pub mod tray;

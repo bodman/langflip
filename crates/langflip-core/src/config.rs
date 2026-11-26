@@ -4,10 +4,10 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::hotkey::HotkeySpec;
-use crate::key::parse_key_name;
+use crate::key::{key_name_for, parse_key_name};
 use crate::layout::{LayoutId, LayoutPair};
 
 pub const DEFAULT_MAX_BUFFER_LEN: usize = 128;
@@ -60,7 +60,7 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     #[serde(default)]
@@ -71,14 +71,14 @@ struct RawConfig {
     behavior: RawBehavior,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawLayouts {
     primary: Option<String>,
     secondary: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawHotkey {
     key: Option<String>,
@@ -88,7 +88,7 @@ struct RawHotkey {
     meta: Option<bool>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawBehavior {
     max_buffer_len: Option<usize>,
@@ -205,6 +205,65 @@ impl AppConfig {
 
         Ok((Self::default(), None))
     }
+
+    /// Serializes this validated configuration back to TOML, preserving all fields.
+    pub fn to_toml(&self) -> Result<String, ConfigError> {
+        let key_name = key_name_for(self.hotkey.key).ok_or_else(|| ConfigError::InvalidField {
+            field: "hotkey.key",
+            reason: "cannot serialize unknown physical key".into(),
+        })?;
+        let raw = RawConfig {
+            layouts: RawLayouts {
+                primary: Some(self.layouts.primary.as_str().to_string()),
+                secondary: Some(self.layouts.secondary.as_str().to_string()),
+            },
+            hotkey: RawHotkey {
+                key: Some(key_name.to_string()),
+                ctrl: Some(self.hotkey.ctrl),
+                alt: Some(self.hotkey.alt),
+                shift: Some(self.hotkey.shift),
+                meta: Some(self.hotkey.meta),
+            },
+            behavior: RawBehavior {
+                max_buffer_len: Some(self.max_buffer_len),
+                replay_delay_ms: Some(self.replay_delay_ms),
+                toggle_on_empty_buffer: Some(self.toggle_on_empty_buffer),
+            },
+        };
+        toml::to_string_pretty(&raw).map_err(|e| ConfigError::Parse(e.to_string()))
+    }
+
+    /// Resolves where to write `langflip.toml`: updates `loaded_path` if present,
+    /// otherwise `<os_config_dir>/langflip/langflip.toml`.
+    pub fn resolve_save_path(
+        loaded_path: Option<&Path>,
+        os_config_dir: Option<&Path>,
+    ) -> Result<PathBuf, ConfigError> {
+        if let Some(existing) = loaded_path {
+            return Ok(existing.to_path_buf());
+        }
+        let dir = os_config_dir.ok_or_else(|| {
+            ConfigError::Io("cannot determine OS config directory to save langflip.toml".into())
+        })?;
+        Ok(dir.join("langflip").join("langflip.toml"))
+    }
+
+    /// Persists this configuration to `path`, creating parent directories as needed.
+    pub fn save_to_path(&self, path: &Path) -> Result<(), ConfigError> {
+        if self.layouts.primary == self.layouts.secondary {
+            return Err(ConfigError::InvalidField {
+                field: "layouts",
+                reason: "primary and secondary layouts must be distinct".into(),
+            });
+        }
+        let serialized = self.to_toml()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ConfigError::Io(format!("{}: {e}", parent.display())))?;
+        }
+        std::fs::write(path, serialized)
+            .map_err(|e| ConfigError::Io(format!("{}: {e}", path.display())))
+    }
 }
 
 #[cfg(test)]
@@ -316,6 +375,42 @@ mod tests {
         let (cfg2, path2) = AppConfig::load_with_precedence(Some(&exe_dir), Some(&os_dir)).unwrap();
         assert_eq!(cfg2.max_buffer_len, 80);
         assert_eq!(path2, Some(exe_dir.join("langflip.toml")));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn to_toml_and_save_to_path_round_trip_preserving_all_fields() {
+        let cfg = AppConfig {
+            layouts: LayoutPair {
+                primary: LayoutId::new("00004009"),
+                secondary: LayoutId::new("0002040D"),
+            },
+            hotkey: HotkeySpec {
+                key: PhysicalKey::new(0x43, false), // F9
+                ctrl: true,
+                alt: false,
+                shift: true,
+                meta: false,
+            },
+            max_buffer_len: 200,
+            replay_delay_ms: 3,
+            toggle_on_empty_buffer: false,
+        };
+
+        let serialized = cfg.to_toml().expect("to_toml should succeed");
+        let reparsed = AppConfig::from_toml(&serialized).expect("serialized TOML must parse");
+        assert_eq!(reparsed, cfg);
+
+        let tmp = std::env::temp_dir().join(format!("langflip_save_test_{}", std::process::id()));
+        let os_dir = tmp.join("appdata");
+        let target = AppConfig::resolve_save_path(None, Some(&os_dir)).unwrap();
+        assert_eq!(target, os_dir.join("langflip").join("langflip.toml"));
+
+        cfg.save_to_path(&target).unwrap();
+        let (loaded, loaded_from) = AppConfig::load_with_precedence(None, Some(&os_dir)).unwrap();
+        assert_eq!(loaded, cfg);
+        assert_eq!(loaded_from, Some(target));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
