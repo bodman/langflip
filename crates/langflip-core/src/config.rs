@@ -24,6 +24,7 @@ pub struct AppConfig {
     pub max_buffer_len: usize,
     pub replay_delay_ms: u64,
     pub toggle_on_empty_buffer: bool,
+    pub auto_start: bool,
 }
 
 impl Default for AppConfig {
@@ -34,6 +35,7 @@ impl Default for AppConfig {
             max_buffer_len: DEFAULT_MAX_BUFFER_LEN,
             replay_delay_ms: DEFAULT_REPLAY_DELAY_MS,
             toggle_on_empty_buffer: true,
+            auto_start: true,
         }
     }
 }
@@ -94,6 +96,7 @@ struct RawBehavior {
     max_buffer_len: Option<usize>,
     replay_delay_ms: Option<u64>,
     toggle_on_empty_buffer: Option<bool>,
+    auto_start: Option<bool>,
 }
 
 impl AppConfig {
@@ -171,6 +174,7 @@ impl AppConfig {
             .behavior
             .toggle_on_empty_buffer
             .unwrap_or(defaults.toggle_on_empty_buffer);
+        let auto_start = raw.behavior.auto_start.unwrap_or(defaults.auto_start);
 
         Ok(Self {
             layouts: LayoutPair { primary, secondary },
@@ -178,6 +182,7 @@ impl AppConfig {
             max_buffer_len,
             replay_delay_ms,
             toggle_on_empty_buffer,
+            auto_start,
         })
     }
 
@@ -228,6 +233,7 @@ impl AppConfig {
                 max_buffer_len: Some(self.max_buffer_len),
                 replay_delay_ms: Some(self.replay_delay_ms),
                 toggle_on_empty_buffer: Some(self.toggle_on_empty_buffer),
+                auto_start: Some(self.auto_start),
             },
         };
         toml::to_string_pretty(&raw).map_err(|e| ConfigError::Parse(e.to_string()))
@@ -282,6 +288,7 @@ mod tests {
         assert_eq!(cfg.max_buffer_len, 128);
         assert_eq!(cfg.replay_delay_ms, 1);
         assert!(cfg.toggle_on_empty_buffer);
+        assert!(cfg.auto_start);
     }
 
     #[test]
@@ -396,6 +403,7 @@ mod tests {
             max_buffer_len: 200,
             replay_delay_ms: 3,
             toggle_on_empty_buffer: false,
+            auto_start: false,
         };
 
         let serialized = cfg.to_toml().expect("to_toml should succeed");

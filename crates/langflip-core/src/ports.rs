@@ -174,6 +174,7 @@ pub struct SettingsSnapshot {
     pub installed_layouts: Vec<InstalledLayout>,
     pub layouts: LayoutPair,
     pub hotkey: HotkeySpec,
+    pub auto_start: bool,
 }
 
 /// Cross-platform system tray & Settings UI seam.
@@ -191,6 +192,6 @@ pub trait TrayHost {
         on_exit: E,
     ) -> Result<(), Self::Error>
     where
-        S: FnMut(LayoutPair, HotkeySpec) -> Result<(), String> + 'static,
+        S: FnMut(LayoutPair, HotkeySpec, bool) -> Result<(), String> + 'static,
         E: FnOnce() + 'static;
 }

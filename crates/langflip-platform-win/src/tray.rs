@@ -70,6 +70,8 @@ const ID_LBL_SUBTITLE: i32 = 2010;
 const ID_LBL_SECTION_1: i32 = 2011;
 const ID_LBL_SECTION_2: i32 = 2012;
 const ID_LBL_TITLE: i32 = 2013;
+const ID_LBL_SECTION_3: i32 = 2014;
+const ID_PILL_AUTOSTART: i32 = 2015;
 
 /// Attaches to the parent console (e.g., PowerShell) when `--metrics` is passed
 /// so diagnostics print even though the binary uses `windows_subsystem = "windows"`.
@@ -146,7 +148,7 @@ const fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
     COLORREF((r as u32) | ((g as u32) << 8) | ((b as u32) << 16))
 }
 
-type SaveCallback = Box<dyn FnMut(LayoutPair, HotkeySpec) -> Result<(), String>>;
+type SaveCallback = Box<dyn FnMut(LayoutPair, HotkeySpec, bool) -> Result<(), String>>;
 type ExitCallback = Box<dyn FnOnce()>;
 
 static TASKBAR_CREATED_MSG: AtomicU32 = AtomicU32::new(0);
@@ -201,6 +203,7 @@ struct PillStates {
     alt: bool,
     shift: bool,
     meta: bool,
+    auto_start: bool,
 }
 
 struct TrayState {
@@ -221,6 +224,7 @@ struct TrayState {
     pill_alt: HWND,
     pill_shift: HWND,
     pill_meta: HWND,
+    pill_autostart: HWND,
 }
 
 thread_local! {
@@ -240,7 +244,7 @@ impl TrayHost for WinTrayHost {
         on_exit: E,
     ) -> Result<(), Self::Error>
     where
-        S: FnMut(LayoutPair, HotkeySpec) -> Result<(), String> + 'static,
+        S: FnMut(LayoutPair, HotkeySpec, bool) -> Result<(), String> + 'static,
         E: FnOnce() + 'static,
     {
         init_common_controls();
@@ -317,6 +321,7 @@ impl TrayHost for WinTrayHost {
                 pill_alt: HWND::default(),
                 pill_shift: HWND::default(),
                 pill_meta: HWND::default(),
+                pill_autostart: HWND::default(),
             });
         });
 
@@ -528,7 +533,7 @@ fn open_or_focus_settings_dialog() {
 
     let base_dpi = unsafe { GetDpiForWindow(tray_hwnd) }.max(96);
     let width = scale(460, base_dpi);
-    let height = scale(396, base_dpi);
+    let height = scale(482, base_dpi);
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
     let x = ((screen_w - width) / 2).max(40);
@@ -734,6 +739,41 @@ fn open_or_focus_settings_dialog() {
         s(25),
     );
 
+    // Card 3: Startup
+    create_label(
+        dlg,
+        hinst,
+        font_section,
+        "STARTUP",
+        Some(ID_LBL_SECTION_3),
+        s(36),
+        s(328),
+        s(240),
+        s(18),
+    );
+    create_label(
+        dlg,
+        hinst,
+        font_body,
+        "Start automatically with Windows",
+        None,
+        s(36),
+        s(353),
+        s(290),
+        s(22),
+    );
+    let pill_autostart = create_ownerdraw_button(
+        dlg,
+        hinst,
+        font_body,
+        "On",
+        ID_PILL_AUTOSTART,
+        s(348),
+        s(349),
+        s(60),
+        s(25),
+    );
+
     // Action buttons
     let _btn_save = create_ownerdraw_button(
         dlg,
@@ -742,7 +782,7 @@ fn open_or_focus_settings_dialog() {
         "Save",
         ID_BTN_SAVE,
         s(242),
-        s(314),
+        s(402),
         s(86),
         s(32),
     );
@@ -753,7 +793,7 @@ fn open_or_focus_settings_dialog() {
         "Cancel",
         ID_BTN_CANCEL,
         s(338),
-        s(314),
+        s(402),
         s(86),
         s(32),
     );
@@ -790,6 +830,7 @@ fn open_or_focus_settings_dialog() {
         alt: snapshot.hotkey.alt,
         shift: snapshot.hotkey.shift,
         meta: snapshot.hotkey.meta,
+        auto_start: snapshot.auto_start,
     };
 
     TRAY_STATE.with(|slot| {
@@ -806,6 +847,7 @@ fn open_or_focus_settings_dialog() {
             state.pill_alt = pill_alt;
             state.pill_shift = pill_shift;
             state.pill_meta = pill_meta;
+            state.pill_autostart = pill_autostart;
         }
     });
 
@@ -833,6 +875,10 @@ fn toggle_pill(id: i32) {
             ID_PILL_META => {
                 state.pills.meta = !state.pills.meta;
                 Some(state.pill_meta)
+            }
+            ID_PILL_AUTOSTART => {
+                state.pills.auto_start = !state.pills.auto_start;
+                Some(state.pill_autostart)
             }
             _ => None,
         }
@@ -904,9 +950,10 @@ fn handle_settings_save(dlg: HWND) {
         };
         let new_pair = LayoutPair { primary, secondary };
 
-        (state.on_save)(new_pair.clone(), new_hotkey)?;
+        (state.on_save)(new_pair.clone(), new_hotkey, pills.auto_start)?;
         state.snapshot.layouts = new_pair;
         state.snapshot.hotkey = new_hotkey;
+        state.snapshot.auto_start = pills.auto_start;
         Ok(())
     });
 
@@ -1002,6 +1049,8 @@ unsafe extern "system" fn settings_wnd_proc(
                 let _ = unsafe { RoundRect(hdc, s(20), s(78), s(424), s(188), radius, radius) };
                 // Card 2: Hotkey
                 let _ = unsafe { RoundRect(hdc, s(20), s(200), s(424), s(304), radius, radius) };
+                // Card 3: Startup
+                let _ = unsafe { RoundRect(hdc, s(20), s(316), s(424), s(388), radius, radius) };
 
                 unsafe {
                     SelectObject(hdc, old_brush);
@@ -1028,7 +1077,7 @@ unsafe extern "system" fn settings_wnd_proc(
                 let text_col = match ctrl_id {
                     ID_LBL_TITLE => NORD.text_title,
                     ID_LBL_SUBTITLE => NORD.text_muted,
-                    ID_LBL_SECTION_1 | ID_LBL_SECTION_2 => NORD.section_ice,
+                    ID_LBL_SECTION_1 | ID_LBL_SECTION_2 | ID_LBL_SECTION_3 => NORD.section_ice,
                     _ => NORD.text_primary,
                 };
                 let (bg_col, brush) = if is_header {
@@ -1097,7 +1146,7 @@ unsafe extern "system" fn settings_wnd_proc(
         WM_COMMAND => {
             let id = (wparam.0 & 0xFFFF) as i32;
             match id {
-                ID_PILL_CTRL | ID_PILL_ALT | ID_PILL_SHIFT | ID_PILL_META => {
+                ID_PILL_CTRL | ID_PILL_ALT | ID_PILL_SHIFT | ID_PILL_META | ID_PILL_AUTOSTART => {
                     toggle_pill(id);
                     return LRESULT(0);
                 }
@@ -1169,12 +1218,13 @@ fn draw_owner_control(
                 7,
             )
         }
-        ID_PILL_CTRL | ID_PILL_ALT | ID_PILL_SHIFT | ID_PILL_META => {
+        ID_PILL_CTRL | ID_PILL_ALT | ID_PILL_SHIFT | ID_PILL_META | ID_PILL_AUTOSTART => {
             let (active, text) = match id {
                 ID_PILL_CTRL => (pills.ctrl, "Ctrl"),
                 ID_PILL_ALT => (pills.alt, "Alt"),
                 ID_PILL_SHIFT => (pills.shift, "Shift"),
-                _ => (pills.meta, "Win"),
+                ID_PILL_META => (pills.meta, "Win"),
+                _ => (pills.auto_start, if pills.auto_start { "On" } else { "Off" }),
             };
             if active {
                 (

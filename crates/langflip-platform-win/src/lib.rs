@@ -4,6 +4,8 @@
 //! compiles and tests cleanly on non-Windows hosts during native TDD runs.
 
 #[cfg(target_os = "windows")]
+pub mod autostart;
+#[cfg(target_os = "windows")]
 pub mod focus;
 #[cfg(target_os = "windows")]
 pub mod hook;
