@@ -25,4 +25,4 @@ description: "TDD-ordered task breakdown for Spec 003 — System Tray Icon, Cont
 
 ## Phase 3: Verification & Windows 11 Live Check
 
-- [ ] T012 Run `./scripts/cargo.sh test --workspace --locked --offline`, Linux + Windows `clippy -- -D warnings`, cross-compile `langflip.exe`, copy to `C:\Users\omril\Downloads\langflip.exe`, and verify tray icon, right-click menu (**Settings** / **Exit**), Settings dialog save & live reload, persistence across restart, single-instance guard, and zero regressions
+- [x] T012 Run `./scripts/cargo.sh test --workspace --locked --offline`, Linux + Windows `clippy -- -D warnings`, cross-compile `langflip.exe`, copy to `C:\Users\omril\Downloads\langflip.exe`, and verify tray icon, right-click menu (**Settings** / **Exit**), Settings dialog save & live reload, persistence across restart, single-instance guard, and zero regressions

@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-26
 
-**Status**: Draft
+**Status**: Implemented (Verified on Windows 11)
 
 **Input**: User description: "1. Run LangFlip in the Windows taskbar notification area (system tray) like a native background utility with a clean icon and no lingering console window. 2. Right-clicking the tray icon shows a context menu with two options: Settings and Exit. 3. Selecting Settings opens a small dialog where the user can configure the two keyboard languages and the trigger hotkey."
 
