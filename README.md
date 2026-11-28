@@ -166,3 +166,10 @@ See [specs/001-mvp-layout-converter/quickstart.md](specs/001-mvp-layout-converte
   - Focus-aware multi-line buffers (`Enter` survives in multi-line editors while still resetting in terminals & single-line fields).
   - Automatic 2-layout OS discovery & Windows logon auto-start toggle.
   - macOS and Linux platform adapters reusing `langflip-core`.
+
+---
+
+## License
+
+LangFlip is open-source software licensed under the [MIT License](LICENSE).
+
